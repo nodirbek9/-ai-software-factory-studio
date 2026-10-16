@@ -5,8 +5,26 @@ import type {
 } from '@asf/shared';
 import { api, eventsUrl, patch, post, put } from '@/lib/api';
 
-export const VIEWS = ['dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings'] as const;
+export const VIEWS = ['dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models'] as const;
 export type View = (typeof VIEWS)[number];
+
+/** V2 hash slugs per view (#/home, #/tasks, …). The V1 hashes (#/dashboard, #/monitor, …) keep working as aliases. */
+const VIEW_SLUGS: Record<View, string> = {
+  dashboard: 'home', monitor: 'runs', projects: 'projects', agents: 'agents', workflows: 'tasks', files: 'repos',
+  logs: 'logs', providers: 'providers', settings: 'settings', models: 'models',
+};
+const SLUG_VIEWS: Record<string, View> = {
+  ...Object.fromEntries(VIEWS.map((view) => [view, view])),
+  ...Object.fromEntries(Object.entries(VIEW_SLUGS).map(([view, slug]) => [slug, view as View])),
+};
+
+export function viewFromHash(hash: string): View {
+  return SLUG_VIEWS[hash.replace(/^#\/?/, '').split(/[/?]/)[0]] ?? 'dashboard';
+}
+
+export function hashForView(view: View): string {
+  return `#/${VIEW_SLUGS[view]}`;
+}
 
 const MAX_EVENTS = 1500;
 const REFRESH_DEBOUNCE_MS = 600;
@@ -67,8 +85,7 @@ interface StudioState {
 }
 
 function readHashView(): View {
-  const hash = window.location.hash.replace('#/', '').replace('#', '');
-  return (VIEWS as readonly string[]).includes(hash) ? (hash as View) : 'dashboard';
+  return viewFromHash(window.location.hash);
 }
 
 function storedProject(): string | null {
@@ -183,7 +200,7 @@ export const useStudio = create<StudioState>((set, get) => {
     rightCollapsed: false,
 
     setView: (view) => {
-      if (window.location.hash !== `#/${view}`) window.location.hash = `#/${view}`;
+      if (window.location.hash !== hashForView(view)) window.location.hash = hashForView(view);
       set({ view });
     },
     setError: (error) => set({ error }),

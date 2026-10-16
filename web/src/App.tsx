@@ -1,25 +1,43 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from 'react';
 import { AlertCircle, KeyRound, X } from 'lucide-react';
 import { setToken } from '@/lib/api';
 import { useStudio, type View } from '@/store/studio';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
-import { RightPanel } from '@/components/layout/RightPanel';
-import { Button, Input } from '@/components/ui/primitives';
-import { Dashboard } from '@/pages/Dashboard';
-import { Monitor } from '@/pages/Monitor';
-import { Projects } from '@/pages/Projects';
-import { Agents } from '@/pages/Agents';
-import { Workflows } from '@/pages/Workflows';
-import { Files } from '@/pages/Files';
-import { Logs } from '@/pages/Logs';
-import { Providers } from '@/pages/Providers';
-import { Settings } from '@/pages/Settings';
+import { CommandPalette } from '@/components/CommandPalette';
+import { Button, Input, Skeleton } from '@/components/ui/primitives';
 
-const PAGES: Record<View, ComponentType> = {
-  dashboard: Dashboard, monitor: Monitor, projects: Projects, agents: Agents, workflows: Workflows,
-  files: Files, logs: Logs, providers: Providers, settings: Settings,
+/** Each page is its own chunk, so the shell loads fast and heavy pages (graph, editors) load on first use. */
+function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K): LazyExoticComponent<ComponentType> {
+  return lazy(async () => ({ default: (await load())[name] }));
+}
+
+const Models = page(() => import('@/pages/Models'), 'Models');
+// The right panel renders Markdown (react-markdown + remark-gfm), so it loads only on the pages that show it.
+const RightPanel = page(() => import('@/components/layout/RightPanel'), 'RightPanel');
+
+const PAGES: Record<View, LazyExoticComponent<ComponentType>> = {
+  dashboard: page(() => import('@/pages/Dashboard'), 'Dashboard'),
+  monitor: page(() => import('@/pages/Monitor'), 'Monitor'),
+  projects: page(() => import('@/pages/Projects'), 'Projects'),
+  workflows: page(() => import('@/pages/Workflows'), 'Workflows'),
+  files: page(() => import('@/pages/Files'), 'Files'),
+  logs: page(() => import('@/pages/Logs'), 'Logs'),
+  settings: page(() => import('@/pages/Settings'), 'Settings'),
+  models: Models,
+  providers: Models,
+  agents: Models,
 };
+
+function PageLoading() {
+  return (
+    <div className="space-y-3 p-4" aria-busy="true" aria-label="Loading page">
+      <Skeleton className="h-7 w-48" />
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
 
 /** Shown only when the server runs with ASF_AUTH_TOKEN (remote access mode). */
 function TokenGate() {
@@ -38,29 +56,47 @@ function TokenGate() {
 }
 
 export function App() {
-  const { view, init, error, setError, authRequired, info } = useStudio();
+  const { view, init, error, setError, authRequired, info, toggleLeft } = useStudio();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => { void init(); }, [init]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'k') { event.preventDefault(); setPaletteOpen((open) => !open); }
+      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); toggleLeft(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleLeft]);
 
   if (authRequired && !info) return <TokenGate />;
   const Page = PAGES[view];
 
   return (
-    <div className="flex h-full min-h-0">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar />
-        {error && (
-          <div role="alert" className="flex items-start gap-2 border-b border-st-failed/30 bg-st-failed/10 px-4 py-2 text-[13px] text-st-failed">
-            <AlertCircle size={15} className="mt-0.5 shrink-0" />
-            <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} aria-label="Dismiss error"><X size={15} /></button>
+    <div className="flex h-full min-h-0 flex-col">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">
+        Skip to content
+      </a>
+      <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          {error && (
+            <div role="alert" className="flex items-start gap-2 border-b border-st-failed/30 bg-st-failed/10 px-4 py-2 text-[13px] text-st-failed">
+              <AlertCircle size={15} className="mt-0.5 shrink-0" />
+              <span className="flex-1">{error}</span>
+              <button onClick={() => setError(null)} aria-label="Dismiss error"><X size={15} /></button>
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1">
+            <main id="main-content" className="min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={<PageLoading />}><Page /></Suspense>
+            </main>
+            {(view === 'dashboard' || view === 'workflows') && <Suspense fallback={null}><RightPanel /></Suspense>}
           </div>
-        )}
-        <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 overflow-hidden"><Page /></main>
-          {(view === 'dashboard' || view === 'workflows') && <RightPanel />}
         </div>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

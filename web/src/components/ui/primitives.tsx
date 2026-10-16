@@ -9,7 +9,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: 'bg-brand text-ink-950 hover:bg-[#8aa2ff]',
+        primary: 'bg-gradient-to-r from-accent-from to-accent-to text-white shadow-glow hover:brightness-110',
         secondary: 'bg-ink-800 text-text border border-line hover:bg-ink-700',
         ghost: 'text-muted hover:text-text hover:bg-ink-800',
         danger: 'bg-st-failed/15 text-st-failed border border-st-failed/30 hover:bg-st-failed/25',
@@ -29,7 +29,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ className, v
 Button.displayName = 'Button';
 
 export function Panel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-xl border border-line-soft bg-ink-900/80 backdrop-blur-sm', className)} {...props} />;
+  return <div className={cn('rounded-xl border border-line-soft bg-surface', className)} {...props} />;
 }
 
 export function PanelHeader({ title, children, className }: { title: ReactNode; children?: ReactNode; className?: string }) {
@@ -121,4 +121,25 @@ export function EmptyState({ icon, title, children }: { icon?: ReactNode; title:
       {children && <div className="max-w-sm text-[13px] text-muted">{children}</div>}
     </div>
   );
+}
+
+/** Keyboard key cap, e.g. <Kbd>Ctrl</Kbd><Kbd>K</Kbd>. */
+export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
+  return <kbd className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded border border-line bg-ink-850 px-1 font-sans text-[10.5px] text-muted', className)}>{children}</kbd>;
+}
+
+/** Error panel with a retry action — every data view uses it instead of failing silently. */
+export function ErrorState({ title = 'Something went wrong', message, onRetry }: { title?: string; message: string; onRetry?: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+      <p className="text-sm font-medium text-st-failed">{title}</p>
+      <p className="max-w-md text-[13px] text-muted">{message}</p>
+      {onRetry && <Button size="sm" className="mt-1" onClick={onRetry}>Retry</Button>}
+    </div>
+  );
+}
+
+/** Placeholder block shown while data loads. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div aria-hidden className={cn('animate-pulse rounded-md bg-ink-800/70', className)} />;
 }
