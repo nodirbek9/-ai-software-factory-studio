@@ -70,10 +70,10 @@ describe('CommandPalette', () => {
 
   it('lists a planned item with its reason and does not navigate or close on Enter', () => {
     const { input, onClose } = openPalette();
-    const planned = NAV_ITEMS.find((item) => item.label === 'Workflow Builder');
+    const planned = NAV_ITEMS.find((item) => item.label === 'QA & Security');
     expect(planned?.plannedReason).toBeTruthy();
-    fireEvent.change(input, { target: { value: 'Workflow Builder' } });
-    const option = screen.getByRole('option', { name: /Workflow Builder/ });
+    fireEvent.change(input, { target: { value: 'QA & Security' } });
+    const option = screen.getByRole('option', { name: /QA & Security/ });
     expect(option.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText(planned!.plannedReason!)).toBeTruthy();
     fireEvent.keyDown(input, { key: 'Enter' });

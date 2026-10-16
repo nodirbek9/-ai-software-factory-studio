@@ -3,9 +3,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { AgentExecutor } from './agents/agentExecutor.ts';
 import { registerRoutes } from './api/routes.ts';
+import { registerWorkflowRoutes } from './api/workflowRoutes.ts';
 import { loadConfig, type AppConfig } from './config.ts';
 import { openDatabase } from './db/database.ts';
 import { createRepositories } from './db/repositories.ts';
+import { RunService } from './workflows/runService.ts';
 import { STANDARD_WORKFLOW } from './workflows/standardTemplate.ts';
 import { EventStream } from './events/eventStream.ts';
 import { getSettings, KeyedMutex, type StudioContext } from './orchestrator/context.ts';
@@ -24,6 +26,8 @@ export interface Studio {
   ctx: StudioContext;
   scheduler: TaskScheduler;
   projects: ProjectService;
+  /** Workflow runs (start/cancel/list/timeline/simulate). */
+  runs: RunService;
   /** Crash recovery + scheduling; call after the HTTP port is bound. */
   start: () => Promise<void>;
   close: () => Promise<void>;
@@ -55,13 +59,16 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
       message: `Agent processes: ${snapshot.running.length}/${snapshot.limit} running, ${snapshot.queued.length} queued` });
   });
   const scheduler = new TaskScheduler(ctx, db);
-  const projects = new ProjectService(ctx, scheduler, db);
+  const runs = new RunService(ctx, scheduler, db);
+  const projects = new ProjectService(ctx, scheduler, runs);
 
   const app = Fastify({ logger: options.logger ? { level: 'info' } : false, bodyLimit: 2 * 1024 * 1024,
     logController: new Fastify.LogController({ disableRequestLogging: true }) });
   // wildcard: true resolves files per request, so a rebuilt dashboard is served without a restart.
   if (fs.existsSync(config.webDistDir)) await app.register(fastifyStatic, { root: config.webDistDir, wildcard: true });
   registerRoutes(app, { ctx, projects, scheduler });
+  // After registerRoutes: the security hooks and the error handler set there apply to these routes too.
+  registerWorkflowRoutes(app, { ctx, runs });
   const recover = async (): Promise<void> => {
     await ctx.sessions.recover();
     await scheduler.recover();
@@ -70,7 +77,7 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
   if (!options.deferRecovery) await recover();
 
   return {
-    app, ctx, scheduler, projects,
+    app, ctx, scheduler, projects, runs,
     start: recover,
     close: async () => {
       await Promise.all([ctx.sessions.shutdown(), scheduler.shutdown()]);

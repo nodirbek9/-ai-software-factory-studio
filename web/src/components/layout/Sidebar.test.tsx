@@ -28,14 +28,24 @@ describe('Sidebar', () => {
     expect(useStudio.getState().view).toBe('logs');
     expect(window.location.hash).toBe('#/logs');
 
-    const builder = screen.getByRole('button', { name: 'Workflow Builder' });
-    expect(builder.getAttribute('aria-disabled')).toBe('true');
-    expect(builder.getAttribute('title')).toMatch(/Phase 4/);
-    fireEvent.click(builder);
+    const quality = screen.getByRole('button', { name: 'QA & Security' });
+    expect(quality.getAttribute('aria-disabled')).toBe('true');
+    expect(quality.getAttribute('title')).toMatch(/Phase 6/);
+    fireEvent.click(quality);
     expect(useStudio.getState().view).toBe('logs');
     for (const item of NAV_ITEMS.filter((entry) => entry.view === null)) {
       expect(screen.getByText(item.plannedReason!)).toBeTruthy();
     }
+  });
+
+  it('opens the Workflow Builder page', () => {
+    render(<Sidebar />);
+    const builder = screen.getByRole('button', { name: 'Workflow Builder' });
+    expect(builder.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(builder);
+    expect(useStudio.getState().view).toBe('builder');
+    expect(window.location.hash).toBe('#/builder');
+    expect(builder.getAttribute('aria-current')).toBe('page');
   });
 
   it('opens the Agent Workspace page', () => {

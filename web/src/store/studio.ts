@@ -5,14 +5,14 @@ import type {
 } from '@asf/shared';
 import { api, eventsUrl, patch, post, put } from '@/lib/api';
 
-export const VIEWS = ['home', 'dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models', 'workspace'] as const;
+export const VIEWS = ['home', 'dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models', 'workspace', 'builder'] as const;
 export type View = (typeof VIEWS)[number];
 
 /** V2 hash slugs per view (#/home, #/tasks, …). The V1 hashes (#/dashboard, #/monitor, …) keep working as aliases;
  *  the V1 Dashboard is the "Project board" (#/board). */
 const VIEW_SLUGS: Record<View, string> = {
   home: 'home', dashboard: 'board', monitor: 'runs', projects: 'projects', agents: 'agents', workflows: 'tasks', files: 'repos',
-  logs: 'logs', providers: 'providers', settings: 'settings', models: 'models', workspace: 'workspace',
+  logs: 'logs', providers: 'providers', settings: 'settings', models: 'models', workspace: 'workspace', builder: 'builder',
 };
 const SLUG_VIEWS: Record<string, View> = {
   ...Object.fromEntries(VIEWS.map((view) => [view, view])),
@@ -25,6 +25,12 @@ export function viewFromHash(hash: string): View {
 
 export function hashForView(view: View): string {
   return `#/${VIEW_SLUGS[view]}`;
+}
+
+/** The id after the view slug (`#/builder/wf-1` → `wf-1`), or null. */
+export function hashParam(hash: string): string | null {
+  const param = hash.replace(/^#\/?/, '').split('?')[0].split('/')[1];
+  return param ? decodeURIComponent(param) : null;
 }
 
 const MAX_EVENTS = 1500;

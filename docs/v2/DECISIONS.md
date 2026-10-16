@@ -39,3 +39,10 @@ change a decision themselves. Status: **proposed 2026-10-16**, awaiting owner ap
 | Coverage provider (TEST_PLAN) | Add `@vitest/coverage-v8` (dev) in Phase 1; release metric = line coverage ≥ 80 % for new server modules; branch coverage reported only. |
 | Minimum Edge version (TEST_PLAN) | Whatever stable Edge is installed; Phase 1 records the version in `TEST_PLAN.md`. |
 | Where P7 performance data lives (TEST_PLAN) | Checked in as `docs/v2/PERFORMANCE_RESULTS.md` next to the baseline. |
+
+## Phase 4 additions (Opus, 2026-10-17)
+P4-1…P4-5 are recorded in `docs/v2/phases/PHASE_4.md` (migration index 3 = spec "v6"; new repositories in
+`runRepositories.ts`; no dagre (own layered layout); run status mirrors the project status, with
+`completed_with_failures` only for tolerated failures; V1 "Start planning" = `RunService.start(wf-standard)`).
+P4-6: a completed run stays completed if the project is later cancelled/failed; only a retry reopens it.
+P4-7: the artifact node has no file-name field (the report runner writes a fixed file).

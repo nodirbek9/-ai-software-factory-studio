@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NAV_ITEMS, isActive } from './navigation';
-import { VIEWS, hashForView, viewFromHash, type View } from '@/store/studio';
+import { VIEWS, hashForView, hashParam, viewFromHash, type View } from '@/store/studio';
 
 describe('navigation model', () => {
   it('has 11 items with unique ids and labels', () => {
@@ -23,6 +23,14 @@ describe('navigation model', () => {
     expect(workspace.view).toBe('workspace');
     expect(workspace.plannedReason).toBeUndefined();
     expect(isActive(workspace, 'workspace')).toBe(true);
+  });
+
+  it('opens the visual workflow builder from Workflow Builder', () => {
+    const builder = NAV_ITEMS.find((item) => item.id === 'builder')!;
+    expect(builder.view).toBe('builder');
+    expect(builder.plannedReason).toBeUndefined();
+    expect(isActive(builder, 'builder')).toBe(true);
+    expect(isActive(builder, 'workflows')).toBe(false);
   });
 
   it('explains every planned item with the phase that delivers it', () => {
@@ -49,9 +57,17 @@ describe('hash routing', () => {
 
   it.each<[string, View]>([
     ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'workflows'],
-    ['#/repos', 'files'], ['#/models', 'models'], ['#/workspace', 'workspace'],
+    ['#/repos', 'files'], ['#/models', 'models'], ['#/workspace', 'workspace'], ['#/builder', 'builder'],
   ])('resolves the V2 slug %s', (hash, view) => {
     expect(viewFromHash(hash)).toBe(view);
+  });
+
+  it('keeps the builder view for #/builder/:workflowId and exposes the id', () => {
+    expect(viewFromHash('#/builder/wf-standard')).toBe('builder');
+    expect(hashParam('#/builder/wf-standard')).toBe('wf-standard');
+    expect(hashParam('#/builder/my%20flow?x=1')).toBe('my flow');
+    expect(hashParam('#/builder')).toBeNull();
+    expect(hashParam('')).toBeNull();
   });
 
   it('writes #/board for the Project board and #/home for Home', () => {

@@ -23,7 +23,12 @@ Last updated: 2026-10-17 ~00:50 (Opus 5.5, account 1, automated night run asf-v2
 ## Phase 3 / Phase 4 status (00:50)
 - Phase 3 gates re-verified green at 00:35 (typecheck, build, 130 server + 259 web tests). Browser check NOT done: the automated run could not start the V2 preview server (start declined) — owner to do it or allow it.
 - **Phase 4 started**: contract appended to `shared/src/index.ts` (workflows/runs types, `Task.runId/nodeId/options`,
-  TaskKind `command|notify`), `server/src/workflows/standardTemplate.ts`, plan `docs/v2/phases/PHASE_4.md` (decisions P4-1..P4-5). Batch A running on account 4 (p4-db, p4-compiler Opus; p4-ui-state Sonnet). Server typecheck is red until p4-db lands (expected).
+  TaskKind `command|notify`), `server/src/workflows/standardTemplate.ts`, plan `docs/v2/phases/PHASE_4.md` (decisions P4-1..P4-5). Batch A (p4-db, p4-compiler Opus; p4-ui-state Sonnet, account 4) **committed `68b471b`**: 162 server + 314 web tests green.
+  Migration rehearsed on a copy of the real V1 DB backup (schema 2 → 4): 88/88 tasks, 7 runs, FK check clean.
+  Opus removed the artifact "File name" field (it changed nothing). Batch B (p4-scoping, p4-runservice Opus; p4-canvas,
+  p4-page Sonnet) started ~00:56 on account 4; all four were cut off at ~01:02 by account 4's session limit
+  (resets 03:20) with partial files. Re-run at 01:03 on **account 5** from `.ai-jobs/phase4-batchB-resume.json`
+  (same briefs + "resume from the partial files"). Logs `.ai-jobs/akk5-p4-*.log`.
 
 ## Follow-ups noted
 - Verify whether Codex, Antigravity and Gemini CLIs load project-level config from a repository (S1 note).
