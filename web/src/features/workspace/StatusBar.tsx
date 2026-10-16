@@ -27,7 +27,7 @@ export function StatusBar() {
   const ram = system && system.totalMemBytes > 0 ? Math.round(((system.totalMemBytes - system.freeMemBytes) / system.totalMemBytes) * 100) : null;
 
   return (
-    <footer aria-label="Workspace status" className="flex h-7 shrink-0 items-center gap-4 overflow-x-auto border-t border-line-soft bg-sidebar px-3 text-[11.5px]">
+    <div role="group" aria-label="Workspace status" className="flex h-7 shrink-0 items-center gap-4 overflow-x-auto border-t border-line-soft bg-sidebar px-3 text-[11.5px]">
       <Item label="Project">{project?.name ?? '—'}</Item>
       <Item label="Sessions" title="Sessions of this project that are running or waiting for a slot">{`${running} running · ${queued} queued`}</Item>
       <Item label="Slots" title="Agent processes in use across all projects / the configured limit">
@@ -36,6 +36,6 @@ export function StatusBar() {
       <Item label="Tokens (24 h)">{usage.data ? formatTokens(usage.data.totalTokens) : '—'}</Item>
       <Item label="CPU">{system?.cpuPercent != null ? `${Math.round(system.cpuPercent)}%` : '—'}</Item>
       <Item label="RAM">{ram !== null ? `${ram}%` : '—'}</Item>
-    </footer>
+    </div>
   );
 }

@@ -12,6 +12,10 @@ Last updated: 2026-10-17 ~00:25 (Opus 5.5, account 1 at 95 % of its 5-hour limit
   provider continuity + layout engine; see `docs/v2/phases/PHASE_3.md`). Opus fixed: a test helper that hung on an
   already-aborted signal, and the executor now refuses to start an agent for a task cancelled before it began.
   Full gates were running at hand-over (check: `npm run typecheck`, `npm run build`, `npm test`).
+- Commit `6bd11bf` (Phase 3 batch 1) was made while the batch-2 workers were still writing, so it also contains their
+  unfinished files; the next commit completes Phase 3.
+- **Owner (2026-10-16 23:35, before sleeping): continue through the next phases without asking; commits on
+  `feature/v2-studio` are approved. Still never: merge to `main`, push, restart V1, paid APIs, global installs.**
 - **Next: Phase 3 batch 2** — job briefs ready in `.ai-jobs/phase3-batch2.json` (p3-sessions, p3-workspace-ui).
 - The running V1 on 4317 still runs pre-0b code until the owner restarts `start-studio.cmd` (no agents running).
 

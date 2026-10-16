@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
-  AgentMessage, AgentRole, AgentSession, CreateSessionInput, EffortLevel, EventLevel, FileEntry, Project, SessionContinuity, SessionTurn,
-  Task, TestResult,
+  AgentMessage, AgentRole, AgentSession, CreateSessionInput, EffortLevel, EventLevel, FileEntry, Project, SessionTurn, Task, TestResult,
 } from '@asf/shared';
 import { AGENT_ROLE_INFO } from '@asf/shared';
 import type { AgentRunOutput } from '../agents/agentExecutor.ts';
@@ -545,7 +544,7 @@ export class SessionManager {
       this.updated(current, `${label(current)}: running`);
       const project = this.project(current.projectId);
       agentTurn = ctx.repos.sessions.addTurn({ sessionId: current.id, author: 'agent', text: '', providerId: current.providerId });
-      const { output: result, continuity } = await this.executeTurn(current, project, userTurn, signal, (chunk) => {
+      const { output: result, replayed } = await this.executeTurn(current, project, userTurn, signal, (chunk) => {
         output.push(chunk);
         collectActivity(activity, chunk);
       });
@@ -553,9 +552,10 @@ export class SessionManager {
       const filesChanged = await this.uncommittedFiles(current);
       agentTurn = ctx.repos.sessions.updateTurn(agentTurn.id, { text: result.text.trim() || '(empty reply)', activity,
         providerId: result.providerId, modelReported: result.model, usage: result.usage, filesChanged, finishedAt: now(), outcome: 'ok', error: null });
-      const ownRef = continuity === 'native' || result.continuity === 'native';
-      current = ctx.repos.sessions.update(current.id, { status: 'idle', lastError: null, lastActivityAt: now(), continuity,
-        providerSessionRef: ownRef && result.providerId === current.providerId ? result.sessionRef : null });
+      // A reference only means something to the session's own provider (not to a fallback that answered instead).
+      const ref = result.continuity === 'native' && result.providerId === current.providerId ? result.sessionRef : null;
+      current = ctx.repos.sessions.update(current.id, { status: 'idle', lastError: null, lastActivityAt: now(),
+        continuity: replayed || !ref ? 'replay' : 'native', providerSessionRef: ref });
       this.turnFinished(current, agentTurn, `${label(current)}: replied`);
     } catch (error) {
       output.flush();
@@ -589,7 +589,7 @@ export class SessionManager {
 
   /** One executor call; a native session the CLI cannot resume is replaced by a fresh one with a context replay. */
   private async executeTurn(session: StoredSession, project: Project, userTurn: SessionTurn, signal: AbortSignal,
-    onOutput: (chunk: string) => void): Promise<{ output: AgentRunOutput; continuity: SessionContinuity }> {
+    onOutput: (chunk: string) => void): Promise<{ output: AgentRunOutput; replayed: boolean }> {
     const attempt = (resumeRef: string | null): Promise<AgentRunOutput> => this.ctx.executor.run({
       project, task: null, role: session.role,
       prompt: (editsFiles, continuity) => this.buildPrompt(session, project, userTurn, editsFiles, continuity?.nativeResume === true),
@@ -601,14 +601,12 @@ export class SessionManager {
     });
     const ref = session.providerSessionRef;
     try {
-      const output = await attempt(ref);
-      return { output, continuity: output.continuity };
+      return { output: await attempt(ref), replayed: false };
     } catch (error) {
       if (!ref || signal.aborted || !NATIVE_RESUME_FAILURE.test(error instanceof Error ? error.message : String(error))) throw error;
       this.emit(session, 'session.continuity', `${label(session)}: the provider could not continue its own session (${errorText(error).slice(0, 200)}); `
         + 'replaying the conversation instead', { continuity: 'replay' }, 'warn');
-      const output = await attempt(null);
-      return { output, continuity: 'replay' };
+      return { output: await attempt(null), replayed: true };
     }
   }
 
