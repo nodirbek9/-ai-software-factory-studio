@@ -187,7 +187,8 @@ async function runInWorktree(args: RunnerArgs, buildPrompt: (editsFiles: boolean
   let { task } = args;
   const project = ctx.repos.projects.get(args.project.id)!;
   const resumedFrom = partialBranchOf(ctx, task.id);
-  const { worktreePath, branch } = await ctx.workspace.createTaskWorktree(project, task, resumedFrom ?? undefined);
+  const runNumber = ctx.repos.runs.get(task.runId)?.number ?? 1;
+  const { worktreePath, branch } = await ctx.workspace.createTaskWorktree(project, task, resumedFrom ?? undefined, runNumber);
   task = ctx.repos.tasks.update(task.id, { worktreePath, branch });
   task = setCheckpoint(ctx, task, 'worktree');
   if (resumedFrom) {

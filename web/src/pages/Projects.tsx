@@ -204,6 +204,7 @@ export function Projects() {
                   <Sparkles size={14} />{planning ? 'Generating plan…' : 'Generate plan'}
                 </Button>
               )}
+              <Button onClick={() => { window.location.hash = `#/projects/${encodeURIComponent(project.id)}`; }}>Project details</Button>
               <Button variant="primary" onClick={async () => { await selectProject(project.id); setView('dashboard'); }}>Open in dashboard</Button>
               <Button variant="danger" disabled={['planning', 'running', 'awaiting_approval'].includes(project.status)}
                 title={['planning', 'running', 'awaiting_approval'].includes(project.status) ? 'Stop the project first' : 'Delete this project'}

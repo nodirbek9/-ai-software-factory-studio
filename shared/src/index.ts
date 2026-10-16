@@ -807,3 +807,114 @@ export interface RunTimeline {
 export interface StartRunInput {
   workflowId: string;
 }
+
+// ------------------------------------------------------------------ V2 projects, tasks, repos (Phase 5, UI_SCREEN_SPECIFICATIONS.md §4, §5, §7)
+
+/** A task row across projects for the Tasks board/list (`GET /api/v2/tasks`). */
+export interface TaskRow extends Task {
+  projectName: string;
+  runNumber: number | null;
+  /** finishedAt − startedAt, or now − startedAt while running; null when never started. */
+  durationMs: number | null;
+}
+
+export interface TaskQuery {
+  projectId?: string;
+  /** 'active' = each project's current run (default), 'all' = every run, or a run id. */
+  runId?: string;
+  role?: AgentRole;
+  status?: TaskStatus;
+  q?: string;
+  limit?: number;
+}
+
+export interface TasksResponse {
+  tasks: TaskRow[];
+  /** True when more rows matched than `limit` (default 500, max 2000). */
+  truncated: boolean;
+}
+
+/** `GET /api/v2/tasks/:id` — everything the task drawer shows. */
+export interface TaskDetail {
+  task: TaskRow;
+  run: Run | null;
+  /** The task's events, newest last (max 300). */
+  events: StudioEvent[];
+  /** Fix rounds of a verification task (null for other kinds). */
+  fixRounds: { used: number; max: number } | null;
+  /** Review/verification text the agent returned (security/review tasks), when stored. */
+  reviewText: string | null;
+}
+
+/** `GET /api/v2/tasks/:id/diff` — the task's committed change. */
+export interface TaskDiff {
+  taskId: string;
+  /** Commit range the diff covers (`base..head`), null when the task has no commits. */
+  base: string | null;
+  head: string | null;
+  files: string[];
+  /** Unified diff, sensitive files (.env, keys) omitted; ≤ 300 KB. */
+  diff: string;
+  truncated: boolean;
+  /** Why the diff is empty or partial ("branch removed", "no commits", "omitted 1 sensitive file"…). */
+  note: string | null;
+}
+
+export type RepoBranchKind = 'integration' | 'task' | 'session' | 'partial' | 'other';
+
+export interface RepoOwner {
+  type: 'task' | 'session';
+  id: string;
+  title: string;
+  status: string;
+}
+
+export interface RepoBranch {
+  name: string;
+  kind: RepoBranchKind;
+  head: string;
+  /** Commits ahead of / behind the integration branch (null for the integration branch itself). */
+  ahead: number | null;
+  behind: number | null;
+  lastCommitAt: string | null;
+  lastCommitSubject: string | null;
+  owner: RepoOwner | null;
+}
+
+export interface RepoWorktree {
+  path: string;
+  branch: string | null;
+  head: string | null;
+  owner: RepoOwner | null;
+  /** Folder modification time. */
+  modifiedAt: string | null;
+}
+
+export interface RepoWipCommit {
+  branch: string;
+  sha: string;
+  subject: string;
+  at: string;
+}
+
+export interface RepoConflict {
+  at: string;
+  message: string;
+  taskId: string | null;
+}
+
+/** `GET /api/v2/projects/:id/repo` — read-only git overview of one project. */
+export interface RepoOverview {
+  projectId: string;
+  workspacePath: string;
+  integrationPath: string | null;
+  integrationBranch: string | null;
+  integrationHead: string | null;
+  baseCommit: string | null;
+  branches: RepoBranch[];
+  worktrees: RepoWorktree[];
+  wipCommits: RepoWipCommit[];
+  conflicts: RepoConflict[];
+  /** Set when git could not be read (missing folder, not a repository). */
+  error: string | null;
+}

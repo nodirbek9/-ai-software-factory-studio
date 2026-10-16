@@ -56,8 +56,8 @@ describe('hash routing', () => {
   });
 
   it.each<[string, View]>([
-    ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'workflows'],
-    ['#/repos', 'files'], ['#/models', 'models'], ['#/workspace', 'workspace'], ['#/builder', 'builder'],
+    ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'tasks'], ['#/task-graph', 'workflows'],
+    ['#/repos', 'repos'], ['#/models', 'models'], ['#/workspace', 'workspace'], ['#/builder', 'builder'],
   ])('resolves the V2 slug %s', (hash, view) => {
     expect(viewFromHash(hash)).toBe(view);
   });

@@ -284,10 +284,13 @@ export class WorkspaceManager {
     return { integrationPath, integrationBranch, baseCommit: base };
   }
 
-  /** New worktree for one attempt; `continueFrom` (a branch with an interrupted attempt's work) is used as its base. */
-  async createTaskWorktree(project: Project, task: Task, continueFrom?: string): Promise<{ worktreePath: string; branch: string }> {
+  /**
+   * New worktree for one attempt; `continueFrom` (a branch with an interrupted attempt's work) is used as its base.
+   * Runs after the first prefix the name with `r<N>-`, because task keys repeat across runs and branches are never deleted.
+   */
+  async createTaskWorktree(project: Project, task: Task, continueFrom?: string, runNumber = 1): Promise<{ worktreePath: string; branch: string }> {
     if (!project.integrationPath) throw new WorkspaceError('Project has no integration worktree');
-    const name = `${task.key}-a${task.attempt}`;
+    const name = `${runNumber > 1 ? `r${runNumber}-` : ''}${task.key}-a${task.attempt}`;
     const branch = `asf/${project.slug}/${name}`;
     const worktreePath = path.join(this.config.worktreesDir, project.id, name);
     if (fs.existsSync(worktreePath)) await this.removeWorktree(project, worktreePath);

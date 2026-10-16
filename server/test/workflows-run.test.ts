@@ -1,8 +1,8 @@
-import type { Task, WorkflowEdge, WorkflowGraph, WorkflowNode } from '@asf/shared';
+import { STANDARD_WORKFLOW_ID, type Task, type WorkflowEdge, type WorkflowGraph, type WorkflowNode } from '@asf/shared';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Studio } from '../src/app.ts';
 import { fixRoundsUsed } from '../src/orchestrator/fixLoop.ts';
-import { prepareSamples, projectOf, startStudio, tempDir, waitFor } from './helpers.ts';
+import { approvePlan, prepareSamples, projectOf, startStudio, tempDir, waitFor } from './helpers.ts';
 
 // Custom workflows end to end through RunService with the Scripted provider (WORKFLOW_ENGINE_SPEC.md §10 WF-03, WF-04).
 
@@ -33,6 +33,37 @@ const tasksOf = (studio: Studio, runId: string): Map<string, Task> =>
   new Map(studio.ctx.repos.tasks.listByRun(runId).map((t) => [t.key, t]));
 const finished = (studio: Studio, runId: string) =>
   waitFor(() => { const run = studio.ctx.repos.runs.get(runId)!; return run.finishedAt ? run : null; }, 120_000, 'run finished');
+
+describe('the Standard template twice on one project', () => {
+  // The Scripted sample writes the same files again in run 2, so its implement tasks fail with "no file changed" —
+  // what matters here is that run 2 gets its own task rows and branches (no collision with run 1's asf/<slug>/<key>-a1).
+  test('run 2 reuses the V1 task keys on its own r2- branches', async () => {
+    const studio = await startStudio(tempDir('std-twice'), prepareSamples());
+    studios.push(studio);
+    const project = await studio.projects.create({ name: 'Twice std', spec: '', workspaceMode: 'sample', sampleName: 'todo-service' });
+    studio.projects.startPlanning(project.id);
+    await approvePlan(studio, project.id);
+    await waitFor(() => ['completed', 'failed'].includes(projectOf(studio, project.id).status), 120_000, 'run 1');
+    expect(projectOf(studio, project.id).status).toBe('completed');
+
+    const run2 = studio.runs.start(project.id, STANDARD_WORKFLOW_ID);
+    await approvePlan(studio, project.id);
+    const done = await finished(studio, run2.id);
+    const tasks = [...tasksOf(studio, run2.id).values()];
+    expect(done.status).toBe('failed');
+    expect(tasks.map((t) => t.key).slice(0, 3)).toEqual(['plan', 'architecture', 'plan-approval']);
+    expect(done.number).toBe(2);
+    const started = tasks.filter((t) => t.kind === 'implement' && t.attempt > 0);
+    expect(started.length).toBeGreaterThan(0);
+    for (const task of started) {
+      expect(task.branch).toMatch(new RegExp(`/r2-${task.key}-a\\d+$`));
+      expect(task.error).toBe('The agent finished without changing any file');
+    }
+    // Run 1's rows are untouched by run 2.
+    expect(studio.ctx.repos.tasks.listByRun(studio.ctx.repos.runs.listByProject(project.id, { limit: 5 }).runs.at(-1)!.id)
+      .every((t) => t.status === 'completed')).toBe(true);
+  });
+});
 
 describe('custom workflow runs', () => {
   test('WF-03: fan-out / fan-in graph runs every branch and joins before QA', async () => {

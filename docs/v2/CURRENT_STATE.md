@@ -29,6 +29,11 @@ Last updated: 2026-10-17 ~00:50 (Opus 5.5, account 1, automated night run asf-v2
   p4-page Sonnet) started ~00:56 on account 4; all four were cut off at ~01:02 by account 4's session limit
   (resets 03:20) with partial files. Re-run at 01:03 on **account 5** from `.ai-jobs/phase4-batchB-resume.json`
   (same briefs + "resume from the partial files"). Logs `.ai-jobs/akk5-p4-*.log`.
+- **Phase 4 committed `16603af`** (01:20): run scoping, RunService + `/api/v2` workflow/run routes, Workflow Builder page
+  (`#/builder`, sidebar "Workflow Builder" enabled). Opus fixed 2 type errors and wrote WF-03/WF-04
+  (`server/test/workflows-run.test.ts`). Gates: 176 server + 358 web tests, typecheck, build green.
+  Not done: browser check of the builder (preview server not allowed in the automated run); Runs page (`#/runs`) still
+  maps to Monitor — run history lives in the builder's bottom panel.
 
 ## Follow-ups noted
 - Verify whether Codex, Antigravity and Gemini CLIs load project-level config from a repository (S1 note).

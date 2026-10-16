@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { AgentExecutor } from './agents/agentExecutor.ts';
 import { registerRoutes } from './api/routes.ts';
+import { registerV2WorkRoutes } from './api/v2WorkRoutes.ts';
 import { registerWorkflowRoutes } from './api/workflowRoutes.ts';
 import { loadConfig, type AppConfig } from './config.ts';
 import { openDatabase } from './db/database.ts';
@@ -69,6 +70,7 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
   registerRoutes(app, { ctx, projects, scheduler });
   // After registerRoutes: the security hooks and the error handler set there apply to these routes too.
   registerWorkflowRoutes(app, { ctx, runs });
+  registerV2WorkRoutes(app, { ctx });
   const recover = async (): Promise<void> => {
     await ctx.sessions.recover();
     await scheduler.recover();
