@@ -1,5 +1,9 @@
 # V2 — Current state
 
+> **2026-10-16 23:20 — V2 work has moved to the worktree `D:\jarvis 2\asf-v2` (branch `feature/v2-studio`).**
+> Phase 0b is committed on `main` (`fc615d2`). Read `D:\jarvis 2\asf-v2\docs\v2\CURRENT_STATE.md` for the live
+> state; this folder is the owner's daily V1 (port 4317).
+
 Last updated: 2026-10-16 ~22:45 (Opus 5.5, account 1). Update this file after every step.
 
 ## Where we are

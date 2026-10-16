@@ -12,8 +12,10 @@ Ro'yxatdan V2 / web testlar haqidagi sessiyani tanlang. Sessiyalar akkauntlar or
 `claude2` band bo'lsa, `claude3`, `claude4` yoki `claude5` ni ishlating.
 
 ## 2-usul: yangi sessiya ochish (suhbat tarixi kerak bo'lmasa)
+V2 ishi endi alohida papkada: `D:\jarvis 2\asf-v2` (V1 papkasi faqat kundalik ishingiz uchun qoladi).
+
 ```
-cd "D:\jarvis 2\ai-software-factory-studio"
+cd "D:\jarvis 2\asf-v2"
 claude2
 ```
 Keyin shuni yozing:
