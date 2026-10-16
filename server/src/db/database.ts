@@ -114,6 +114,57 @@ const MIGRATIONS: string[] = [
   );`,
   // v2: per-agent reasoning effort ('' = provider default)
   `ALTER TABLE agent_configs ADD COLUMN effort TEXT NOT NULL DEFAULT '';`,
+  // v5: V2 agent sessions, session turns, saved workspace layouts, per-session usage (AGENT_WORKSPACE_SPEC.md §2)
+  `CREATE TABLE agent_sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    role TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    effort TEXT NOT NULL DEFAULT '',
+    allow_fallback INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL CHECK (mode IN ('readonly','edit')),
+    cwd_kind TEXT NOT NULL CHECK (cwd_kind IN ('integration','own-worktree')),
+    branch TEXT,
+    worktree_path TEXT,
+    base_commit TEXT,
+    continuity TEXT NOT NULL DEFAULT 'replay' CHECK (continuity IN ('native','replay')),
+    provider_session_ref TEXT,
+    task_id TEXT,
+    status TEXT NOT NULL,
+    last_error TEXT,
+    last_activity_at TEXT,
+    created_at TEXT NOT NULL,
+    closed_at TEXT,
+    UNIQUE(project_id, number)
+  );
+  CREATE INDEX idx_agent_sessions_project ON agent_sessions(project_id, status);
+  CREATE TABLE session_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    author TEXT NOT NULL CHECK (author IN ('user','agent','system')),
+    text TEXT NOT NULL,
+    activity TEXT NOT NULL DEFAULT '[]',
+    provider_id TEXT,
+    model_reported TEXT,
+    usage TEXT,
+    files_changed TEXT NOT NULL DEFAULT '[]',
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    outcome TEXT,
+    error TEXT,
+    UNIQUE(session_id, seq)
+  );
+  CREATE INDEX idx_session_turns_session ON session_turns(session_id, seq);
+  CREATE TABLE workspace_layouts (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    layout TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE usage_records ADD COLUMN session_id TEXT;`,
 ];
 
 export type Db = DatabaseSync;

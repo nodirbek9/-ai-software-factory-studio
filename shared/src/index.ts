@@ -198,6 +198,8 @@ export interface StudioSettings {
   fallbackOrder: string[];
   /** Automatic fix rounds per project when tests go red or a review says FAIL (0 = off). */
   maxFixRounds: number;
+  /** Agent CLI processes allowed at once across task runs and workspace sessions (1–8, ProcessBudget, D-006). */
+  maxAgentProcesses: number;
 }
 
 export interface ServerInfo {
@@ -449,4 +451,95 @@ export interface EventsPage {
   events: StudioEvent[];
   /** Pass as ?before= to load the next (older) page; null when there is no older event. */
   nextBefore: number | null;
+}
+
+// ------------------------------------------------------------------ V2 agent sessions (Phase 3, AGENT_WORKSPACE_SPEC.md)
+
+export type SessionMode = 'readonly' | 'edit';
+export type SessionStatus = 'idle' | 'queued' | 'running' | 'failed' | 'stopped' | 'closed';
+export type SessionContinuity = 'native' | 'replay';
+
+export interface AgentSession {
+  id: string;
+  projectId: string;
+  number: number;
+  title: string;
+  role: AgentRole;
+  providerId: string;
+  model: string;
+  effort: EffortLevel;
+  allowFallback: boolean;
+  mode: SessionMode;
+  /** integration = the project's integration worktree (read-only); own-worktree = branch asf/<slug>/session-<n>. */
+  cwdKind: 'integration' | 'own-worktree';
+  branch: string | null;
+  worktreePath: string | null;
+  continuity: SessionContinuity;
+  taskId: string | null;
+  status: SessionStatus;
+  /** Position in the ProcessBudget queue while status is 'queued'. */
+  queuePosition: number | null;
+  lastError: string | null;
+  lastActivityAt: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface SessionTurn {
+  id: number;
+  sessionId: string;
+  seq: number;
+  author: 'user' | 'agent' | 'system';
+  text: string;
+  /** Tool activity lines ("Editing src/app.ts"), redacted. */
+  activity: string[];
+  providerId: string | null;
+  modelReported: string | null;
+  usage: UsageInfo | null;
+  filesChanged: string[];
+  startedAt: string;
+  finishedAt: string | null;
+  outcome: 'ok' | 'error' | 'stopped' | 'interrupted' | null;
+  error: string | null;
+}
+
+export interface CreateSessionInput {
+  title?: string;
+  role: AgentRole;
+  providerId: string;
+  model: string;
+  effort: EffortLevel;
+  mode: SessionMode;
+  taskId?: string | null;
+}
+
+export interface ProcessBudgetOwner {
+  kind: 'task' | 'session';
+  id: string;
+  projectId: string;
+  label: string;
+}
+
+export interface ProcessBudgetSnapshot {
+  limit: number;
+  running: ProcessBudgetOwner[];
+  queued: (ProcessBudgetOwner & { position: number; since: string })[];
+}
+
+/** Saved multi-panel layout of a project's workspace (AGENT_WORKSPACE_SPEC.md §9). */
+export type WorkspaceLayoutNode =
+  | { type: 'panel'; id: string }
+  | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: WorkspaceLayoutNode[] };
+
+export type WorkspacePanelTab = 'chat' | 'activity' | 'changes' | 'files' | 'output' | 'task';
+
+export interface WorkspaceLayout {
+  version: 1;
+  preset: 1 | 2 | 3 | 4 | 5 | 6 | 8 | 'custom';
+  root: WorkspaceLayoutNode;
+  panels: Record<string, { sessionId: string | null; tab: WorkspacePanelTab; kind: 'session' | 'orchestrator' }>;
+  maximized: string | null;
+  minimized: string[];
+  recentlyClosed: { sessionId: string; title: string; closedAt: string }[];
+  drawer: { open: boolean; tab: 'coordination' | 'context' | 'artifacts'; width: number };
 }

@@ -226,7 +226,8 @@ describe('migration backup', () => {
     expect(fs.existsSync(path.join(dir, 'backups'))).toBe(false);
     const latest = (fresh.prepare('SELECT version FROM schema_version').get() as { version: number }).version;
     // Roll the last migration back so reopening has one pending.
-    fresh.exec(`ALTER TABLE agent_configs DROP COLUMN effort; UPDATE schema_version SET version = ${latest - 1}`);
+    fresh.exec(`DROP TABLE workspace_layouts; DROP TABLE session_turns; DROP TABLE agent_sessions;
+      ALTER TABLE usage_records DROP COLUMN session_id; UPDATE schema_version SET version = ${latest - 1}`);
     fresh.close();
 
     const upgraded = openDatabase(file);

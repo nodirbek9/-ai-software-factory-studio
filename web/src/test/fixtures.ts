@@ -34,7 +34,7 @@ export function agentResult(overrides: Partial<AgentTestResult> = {}): AgentTest
 
 export const settings: StudioSettings = {
   maxParallelTasks: 4, defaultMaxAttempts: 3, taskTimeoutMinutes: 30,
-  idleTimeoutMinutes: 15, maxFixRounds: 2, fallbackOrder: ['claude-code', 'codex'],
+  idleTimeoutMinutes: 15, maxFixRounds: 2, maxAgentProcesses: 3, fallbackOrder: ['claude-code', 'codex'],
 };
 
 export const serverInfo: ServerInfo = {

@@ -8,6 +8,7 @@ import { ProviderError } from '../providers/types.ts';
 import { redact } from '../security/redact.ts';
 import { emitProject, emitTask, getSettings, type StudioContext } from './context.ts';
 import { insertFixTask } from './fixLoop.ts';
+import type { ProcessSlotRelease } from './processBudget.ts';
 import { partialBranchOf, PermanentTaskError, savePartialWork, TASK_RUNNERS, VerificationFailedError } from './taskRunners.ts';
 
 type StopReason = 'cancel' | 'shutdown' | null;
@@ -157,7 +158,21 @@ export class TaskScheduler {
     void this.execute(project.id, running, controller.signal);
   }
 
+  /** Waits for a ProcessBudget slot; an abort while queued rejects like any other abort, so fail() applies cancel/shutdown. */
+  private acquireSlot(project: Project, task: Task, signal: AbortSignal): Promise<ProcessSlotRelease> {
+    const owner = { kind: 'task' as const, id: task.id, projectId: project.id, label: task.title };
+    const pending = this.ctx.budget.acquire(owner, signal);
+    const position = this.ctx.budget.queuePosition(owner);
+    if (position !== null) {
+      this.ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'task.waiting_slot', level: 'info',
+        message: `${task.title}: waiting for a free agent process slot (position ${position})`,
+        data: { position, limit: this.ctx.budget.limit } });
+    }
+    return pending;
+  }
+
   private async execute(projectId: string, task: Task, signal: AbortSignal): Promise<void> {
+    let release: ProcessSlotRelease | null = null;
     try {
       const project = this.ctx.repos.projects.get(projectId)!;
       if (task.kind === 'gate') throw new PermanentTaskError('Gate tasks are completed by approvals');
@@ -165,11 +180,13 @@ export class TaskScheduler {
         this.complete(task, { summary: 'Plan was already expanded before an interruption.' });
         return;
       }
+      release = await this.acquireSlot(project, task, signal);
       const outcome = await TASK_RUNNERS[task.kind]({ ctx: this.ctx, project, task, signal, db: this.db });
       this.complete(task, outcome);
     } catch (error) {
       this.fail(task, error as Error);
     } finally {
+      release?.();
       this.active.delete(task.id);
       if (!this.stopped) setImmediate(() => this.tickAll());
     }

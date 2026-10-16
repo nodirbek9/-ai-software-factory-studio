@@ -179,8 +179,22 @@ export class ProviderRegistry {
   /** Routing policy: the agent's assigned provider, then (if allowed) the configured fallback order. */
   async resolveForRole(role: AgentRole, fallbackOrder: string[]): Promise<ResolvedProvider> {
     const assignment = this.agentConfig(role);
+    return this.resolve(assignment.providerId, assignment.model, assignment.effort ?? '', assignment.allowFallback, fallbackOrder, role);
+  }
+
+  /**
+   * Routing for a caller that names the provider itself (workspace sessions): exactly that provider when it is
+   * usable, else — only when allowed — the fallback order, the same way resolveForRole does.
+   */
+  async resolveExplicit(providerId: string, model: string, effort: EffortLevel, allowFallback: boolean, fallbackOrder: string[]): Promise<ResolvedProvider> {
+    return this.resolve(providerId, model, effort, allowFallback, fallbackOrder,
+      `provider ${providerId}${allowFallback ? ' or its fallbacks' : ' (fallback is off)'}`);
+  }
+
+  private async resolve(providerId: string, requestedModel: string, effort: EffortLevel, allowFallback: boolean, fallbackOrder: string[],
+    subject: string): Promise<ResolvedProvider> {
     const reasons: string[] = [];
-    const candidates = [assignment.providerId, ...(assignment.allowFallback ? fallbackOrder.filter((id) => id !== assignment.providerId) : [])];
+    const candidates = [providerId, ...(allowFallback ? fallbackOrder.filter((id) => id !== providerId) : [])];
     for (const id of candidates) {
       const reason = await this.unusableReason(id);
       if (reason) { reasons.push(reason); continue; }
@@ -188,10 +202,10 @@ export class ProviderRegistry {
       const settings = this.config.getProviderConfig(id)!.settings;
       // Keep the requested model on a fallback provider that offers it too (e.g. another Claude login), so a
       // fallback never silently downgrades Opus to the provider's default model.
-      const offersRequested = Boolean(assignment.model) && adapter.models.includes(assignment.model);
-      const model = (id === assignment.providerId && assignment.model) || offersRequested ? assignment.model : adapter.defaultModel;
-      return { adapter, model, effort: assignment.effort ?? '', settings, fallbackFrom: id === assignment.providerId ? null : assignment.providerId };
+      const offersRequested = Boolean(requestedModel) && adapter.models.includes(requestedModel);
+      const model = (id === providerId && requestedModel) || offersRequested ? requestedModel : adapter.defaultModel;
+      return { adapter, model, effort, settings, fallbackFrom: id === providerId ? null : providerId };
     }
-    throw new NoProviderError(`No usable provider for ${role}: ${reasons.join('; ')}`);
+    throw new NoProviderError(`No usable provider for ${subject}: ${reasons.join('; ')}`);
   }
 }

@@ -25,6 +25,7 @@ const PAGES: Record<View, LazyExoticComponent<ComponentType>> = {
   files: page(() => import('@/pages/Files'), 'Files'),
   logs: page(() => import('@/pages/Logs'), 'Logs'),
   settings: page(() => import('@/pages/Settings'), 'Settings'),
+  workspace: page(() => import('@/pages/Workspace'), 'Workspace'),
   models: Models,
   providers: Models,
   agents: Models,

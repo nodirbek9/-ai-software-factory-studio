@@ -70,16 +70,27 @@ describe('CommandPalette', () => {
 
   it('lists a planned item with its reason and does not navigate or close on Enter', () => {
     const { input, onClose } = openPalette();
-    const planned = NAV_ITEMS.find((item) => item.label === 'Agent Workspace');
+    const planned = NAV_ITEMS.find((item) => item.label === 'Workflow Builder');
     expect(planned?.plannedReason).toBeTruthy();
-    fireEvent.change(input, { target: { value: 'Agent Workspace' } });
-    const option = screen.getByRole('option', { name: /Agent Workspace/ });
+    fireEvent.change(input, { target: { value: 'Workflow Builder' } });
+    const option = screen.getByRole('option', { name: /Workflow Builder/ });
     expect(option.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText(planned!.plannedReason!)).toBeTruthy();
     fireEvent.keyDown(input, { key: 'Enter' });
     fireEvent.click(option);
     expect(window.location.hash).toBe('');
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('opens the Agent Workspace page from the palette', () => {
+    const { input, onClose } = openPalette();
+    fireEvent.change(input, { target: { value: 'Agent Workspace' } });
+    const option = screen.getByRole('option', { name: /Agent Workspace/ });
+    expect(option.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(useStudio.getState().view).toBe('workspace');
+    expect(window.location.hash).toBe('#/workspace');
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('closes on Escape and on a click on the overlay', () => {

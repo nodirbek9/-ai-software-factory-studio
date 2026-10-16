@@ -30,7 +30,8 @@ Read only the files a step needs; do not re-scan the whole repository.
 
 ## Workers — owner's model order (2026-10-16)
 1. First do the work yourself on your own Claude limit until its **5-hour window reaches 80 %**.
-2. Then only: Claude **account 4** (headless, `node .ai-jobs/run-akk4.mjs <jobs.json> <id>=<model>`),
+2. Then only: Claude **account 4** (headless, `node .ai-jobs/run-akk4.mjs <jobs.json> <id>=<model>`), and when
+   account 4 is out of quota **account 5** (`CLAUDE_WORKER_ACCOUNT=5 node .ai-jobs/run-akk4.mjs ...`),
    **GPT via Codex** (router with `--model gpt-sol|gpt-astra|gpt-luna --only`), **Gemini** if it has quota.
 3. Never OmniRoute free models, Qoder, Antigravity Claude or other providers (the router's default chains
    fall through to them — always pin with `--only`).

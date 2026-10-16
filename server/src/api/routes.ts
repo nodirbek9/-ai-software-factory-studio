@@ -43,6 +43,7 @@ const settingsSchema = z.object({
   idleTimeoutMinutes: z.number().int().min(2).max(120),
   fallbackOrder: z.array(z.string().max(60)).max(20),
   maxFixRounds: z.number().int().min(0).max(5),
+  maxAgentProcesses: z.number().int().min(1).max(8),
 }).partial();
 const decisionSchema = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(2000).nullable().optional() });
 const chatSchema = z.object({ message: z.string().trim().min(1).max(8000) });
@@ -88,9 +89,11 @@ async function testAgent(ctx: StudioContext, role: AgentRole): Promise<AgentTest
     effortApplied: config.providerId === 'codex' || config.providerId.startsWith('claude-code'),
     ok: false, answer: null, correct: null, reasoningTokens: null, outputTokens: null, durationMs: 0, error: null,
   };
+  let release: (() => void) | null = null;
   try {
     const reason = await ctx.registry.unusableReason(config.providerId);
     if (reason) throw new Error(reason);
+    release = await ctx.budget.acquire({ kind: 'session', id: `agent-test:${role}`, projectId: '', label: 'agent test' });
     const cwd = path.join(ctx.config.dataDir, 'agent-test');
     fs.mkdirSync(cwd, { recursive: true });
     if (fs.existsSync(path.join(cwd, '.git'))) throw new Error('Agent test scratch folder must not be a git repository');
@@ -111,6 +114,8 @@ async function testAgent(ctx: StudioContext, role: AgentRole): Promise<AgentTest
   } catch (error) {
     result.error = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
     if (error instanceof ProviderLimitError) ctx.registry.markLimited(config.providerId, error.resetsAt, result.error);
+  } finally {
+    release?.();
   }
   result.durationMs = Date.now() - started;
   ctx.events.emit({ role, type: 'agent.test', message: `${role} test: ${result.providerLabel} / ${result.actualModel ?? 'unknown'} · effort ${result.effort || 'default'} · ${result.reasoningTokens ?? 'unknown'} thinking tokens · ${result.ok ? 'ok' : 'failed'}` });

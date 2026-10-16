@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
-  AgentConfig, AgentMessage, AgentRole, Approval, ApprovalKind, ApprovalStatus, CheckpointStage, EventLevel,
-  EventsPage, Project, ProjectStatus, StudioEvent, Task, TaskKind, TaskStatus, TestResult, UsageInfo,
+  AgentConfig, AgentMessage, AgentRole, AgentSession, Approval, ApprovalKind, ApprovalStatus, CheckpointStage, EffortLevel,
+  EventLevel, EventsPage, Project, ProjectStatus, SessionContinuity, SessionMode, SessionStatus, SessionTurn, StudioEvent,
+  Task, TaskKind, TaskStatus, TestResult, UsageInfo, WorkspaceLayout,
 } from '@asf/shared';
 import type { Db } from './database.ts';
 import { redact } from '../security/redact.ts';
@@ -357,15 +358,25 @@ export function localDate(at: Date): string {
 
 export interface UsageRecord {
   projectId: string | null; taskId: string | null; role: AgentRole | null; providerId: string; model: string | null; usage: UsageInfo;
+  /** Workspace session that made the call (V2); null for task runs, chat and tests. */
+  sessionId?: string | null;
 }
 
 export class UsageRepository {
   constructor(private readonly db: Db) {}
 
   record(input: UsageRecord): void {
-    this.db.prepare(`INSERT INTO usage_records (project_id, task_id, role, provider_id, model, input_tokens, output_tokens, cost_usd, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.projectId, input.taskId, input.role, input.providerId, input.model,
-      input.usage.inputTokens, input.usage.outputTokens, input.usage.costUsd, now());
+    this.db.prepare(`INSERT INTO usage_records (project_id, task_id, role, provider_id, model, input_tokens, output_tokens, cost_usd, created_at, session_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.projectId, input.taskId, input.role, input.providerId, input.model,
+      input.usage.inputTokens, input.usage.outputTokens, input.usage.costUsd, now(), input.sessionId ?? null);
+  }
+
+  /** Summed usage of one workspace session; null when it made no recorded call. */
+  totalsForSession(sessionId: string): UsageInfo | null {
+    const r = this.db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(input_tokens),0) AS i, COALESCE(SUM(output_tokens),0) AS o, SUM(cost_usd) AS c
+      FROM usage_records WHERE session_id = ?`).get(sessionId) as { n: number; i: number; o: number; c: number | null };
+    if (!Number(r.n)) return null;
+    return { inputTokens: Number(r.i), outputTokens: Number(r.o), costUsd: r.c === null ? null : Number(r.c) };
   }
 
   /** Calls, tokens and cost per provider since the given ISO time (e.g. local midnight). */
@@ -435,6 +446,221 @@ export class UsageRepository {
   }
 }
 
+// ---------------------------------------------------------------- V2 agent sessions
+
+/** A session row with the two persisted columns the shared API type does not expose. */
+export interface StoredSession extends AgentSession {
+  baseCommit: string | null;
+  /** Claude session id / Codex thread id; null until the provider reports one (or after a provider change). */
+  providerSessionRef: string | null;
+}
+
+const MAX_TURN_TEXT = 200 * 1024;
+
+/** Safe against hand-edited or corrupt JSON columns: falls back instead of throwing. */
+function safeJson<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string' || !value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function toSession(r: Row): StoredSession {
+  return {
+    id: String(r.id), projectId: String(r.project_id), number: Number(r.number), title: String(r.title), role: r.role as AgentRole,
+    providerId: String(r.provider_id), model: String(r.model), effort: String(r.effort ?? '') as EffortLevel,
+    allowFallback: Boolean(r.allow_fallback), mode: r.mode as SessionMode, cwdKind: r.cwd_kind as AgentSession['cwdKind'],
+    branch: str(r.branch), worktreePath: str(r.worktree_path), baseCommit: str(r.base_commit),
+    continuity: r.continuity as SessionContinuity, providerSessionRef: str(r.provider_session_ref), taskId: str(r.task_id),
+    status: r.status as SessionStatus, queuePosition: null, lastError: str(r.last_error), lastActivityAt: str(r.last_activity_at),
+    createdAt: String(r.created_at), closedAt: str(r.closed_at),
+  };
+}
+
+function toTurn(r: Row): SessionTurn {
+  return {
+    id: Number(r.id), sessionId: String(r.session_id), seq: Number(r.seq), author: r.author as SessionTurn['author'],
+    text: String(r.text), activity: safeJson<string[]>(r.activity, []), providerId: str(r.provider_id),
+    modelReported: str(r.model_reported), usage: safeJson<UsageInfo | null>(r.usage, null),
+    filesChanged: safeJson<string[]>(r.files_changed, []), startedAt: String(r.started_at), finishedAt: str(r.finished_at),
+    outcome: (str(r.outcome) as SessionTurn['outcome']), error: str(r.error),
+  };
+}
+
+/** Redacts, then caps the text of a turn at 200 KB with a visible note. */
+function turnText(text: string): string {
+  const clean = redact(text);
+  return clean.length > MAX_TURN_TEXT ? `${clean.slice(0, MAX_TURN_TEXT)}\n\n[truncated: the text exceeded 200 KB]` : clean;
+}
+
+export interface NewSession {
+  projectId: string;
+  /** Defaults to "Session <number>". */
+  title?: string;
+  role: AgentRole;
+  providerId: string;
+  model: string;
+  effort?: EffortLevel;
+  allowFallback?: boolean;
+  mode: SessionMode;
+  cwdKind: AgentSession['cwdKind'];
+  branch?: string | null;
+  worktreePath?: string | null;
+  baseCommit?: string | null;
+  continuity?: SessionContinuity;
+  taskId?: string | null;
+  status?: SessionStatus;
+}
+
+export type SessionPatch = Partial<Pick<StoredSession,
+  'title' | 'role' | 'providerId' | 'model' | 'effort' | 'allowFallback' | 'mode' | 'cwdKind' | 'branch' | 'worktreePath' | 'baseCommit'
+  | 'continuity' | 'providerSessionRef' | 'taskId' | 'status' | 'lastError' | 'lastActivityAt' | 'closedAt'>>;
+
+const SESSION_COLUMNS: Record<keyof SessionPatch, string> = {
+  title: 'title', role: 'role', providerId: 'provider_id', model: 'model', effort: 'effort', allowFallback: 'allow_fallback',
+  mode: 'mode', cwdKind: 'cwd_kind', branch: 'branch', worktreePath: 'worktree_path', baseCommit: 'base_commit',
+  continuity: 'continuity', providerSessionRef: 'provider_session_ref', taskId: 'task_id', status: 'status', lastError: 'last_error',
+  lastActivityAt: 'last_activity_at', closedAt: 'closed_at',
+};
+
+export interface NewTurn {
+  sessionId: string;
+  author: SessionTurn['author'];
+  text: string;
+  activity?: string[];
+  providerId?: string | null;
+  modelReported?: string | null;
+  usage?: UsageInfo | null;
+  filesChanged?: string[];
+  startedAt?: string;
+  finishedAt?: string | null;
+  outcome?: SessionTurn['outcome'];
+  error?: string | null;
+}
+
+export type TurnPatch = Partial<Pick<SessionTurn,
+  'text' | 'activity' | 'providerId' | 'modelReported' | 'usage' | 'filesChanged' | 'finishedAt' | 'outcome' | 'error'>>;
+
+const TURN_COLUMNS: Record<keyof TurnPatch, string> = {
+  text: 'text', activity: 'activity', providerId: 'provider_id', modelReported: 'model_reported', usage: 'usage',
+  filesChanged: 'files_changed', finishedAt: 'finished_at', outcome: 'outcome', error: 'error',
+};
+
+export class SessionRepository {
+  constructor(private readonly db: Db) {}
+
+  /** Inserts the session with the next per-project number (closed sessions keep their number). */
+  create(input: NewSession): StoredSession {
+    const id = randomUUID();
+    const row = this.db.prepare('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM agent_sessions WHERE project_id = ?').get(input.projectId) as { n: number };
+    const number = Number(row.n);
+    this.db.prepare(`INSERT INTO agent_sessions (id, project_id, number, title, role, provider_id, model, effort, allow_fallback, mode,
+      cwd_kind, branch, worktree_path, base_commit, continuity, task_id, status, last_activity_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.projectId, number, redact(input.title?.trim() || `Session ${number}`), input.role, input.providerId, input.model,
+        input.effort ?? '', input.allowFallback ? 1 : 0, input.mode, input.cwdKind, input.branch ?? null, input.worktreePath ?? null,
+        input.baseCommit ?? null, input.continuity ?? 'replay', input.taskId ?? null, input.status ?? 'idle', null, now());
+    return this.get(id)!;
+  }
+
+  get(id: string): StoredSession | null {
+    const row = this.db.prepare('SELECT * FROM agent_sessions WHERE id = ?').get(id) as Row | undefined;
+    return row ? toSession(row) : null;
+  }
+
+  /** Oldest session first; closed sessions are left out unless `includeClosed` is set. */
+  listByProject(projectId: string, options: { includeClosed?: boolean } = {}): StoredSession[] {
+    const closed = options.includeClosed ? '' : " AND status != 'closed'";
+    return (this.db.prepare(`SELECT * FROM agent_sessions WHERE project_id = ?${closed} ORDER BY number`).all(projectId) as Row[]).map(toSession);
+  }
+
+  /** Across all projects (crash recovery of queued/running sessions). */
+  listByStatus(...statuses: SessionStatus[]): StoredSession[] {
+    if (!statuses.length) return [];
+    const marks = statuses.map(() => '?').join(', ');
+    return (this.db.prepare(`SELECT * FROM agent_sessions WHERE status IN (${marks}) ORDER BY created_at`).all(...statuses) as Row[]).map(toSession);
+  }
+
+  update(id: string, patch: SessionPatch): StoredSession {
+    const keys = (Object.keys(patch) as (keyof SessionPatch)[]).filter((k) => patch[k] !== undefined);
+    if (keys.length) {
+      const sets = keys.map((k) => `${SESSION_COLUMNS[k]} = ?`).join(', ');
+      const values = keys.map((k) => {
+        const value = patch[k];
+        if (k === 'allowFallback') return value ? 1 : 0;
+        if ((k === 'title' || k === 'lastError') && typeof value === 'string') return redact(value);
+        return (value ?? null) as string | number | null;
+      });
+      this.db.prepare(`UPDATE agent_sessions SET ${sets} WHERE id = ?`).run(...values, id);
+    }
+    return this.get(id)!;
+  }
+
+  addTurn(input: NewTurn): SessionTurn {
+    const row = this.db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM session_turns WHERE session_id = ?').get(input.sessionId) as { s: number };
+    const result = this.db.prepare(`INSERT INTO session_turns (session_id, seq, author, text, activity, provider_id, model_reported, usage,
+      files_changed, started_at, finished_at, outcome, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.sessionId, Number(row.s), input.author, turnText(input.text), JSON.stringify((input.activity ?? []).map(redact)),
+        input.providerId ?? null, input.modelReported ?? null, input.usage ? JSON.stringify(input.usage) : null,
+        JSON.stringify(input.filesChanged ?? []), input.startedAt ?? now(), input.finishedAt ?? null, input.outcome ?? null,
+        input.error ? redact(input.error) : null);
+    return this.getTurn(Number(result.lastInsertRowid))!;
+  }
+
+  getTurn(id: number): SessionTurn | null {
+    const row = this.db.prepare('SELECT * FROM session_turns WHERE id = ?').get(id) as Row | undefined;
+    return row ? toTurn(row) : null;
+  }
+
+  updateTurn(id: number, patch: TurnPatch): SessionTurn {
+    const keys = (Object.keys(patch) as (keyof TurnPatch)[]).filter((k) => patch[k] !== undefined);
+    if (keys.length) {
+      const sets = keys.map((k) => `${TURN_COLUMNS[k]} = ?`).join(', ');
+      const values = keys.map((k) => {
+        const value = patch[k];
+        if (k === 'text') return turnText(String(value));
+        if (k === 'activity') return JSON.stringify((value as string[]).map(redact));
+        if (k === 'filesChanged' || k === 'usage') return value === null ? null : JSON.stringify(value);
+        if (k === 'error') return value === null ? null : redact(String(value));
+        return (value ?? null) as string | number | null;
+      });
+      this.db.prepare(`UPDATE session_turns SET ${sets} WHERE id = ?`).run(...values, id);
+    }
+    return this.getTurn(id)!;
+  }
+
+  /**
+   * One page of turns, oldest first within the page. Without `before` it is the newest `limit` turns; with `before`
+   * (a turn `seq`) it is the `limit` turns just older than that. Load the next older page with the first seq returned.
+   */
+  listTurns(sessionId: string, options: { before?: number; limit: number }): SessionTurn[] {
+    const limit = Math.min(Math.max(Math.trunc(options.limit) || 1, 1), 500);
+    const rows = options.before === undefined
+      ? this.db.prepare('SELECT * FROM session_turns WHERE session_id = ? ORDER BY seq DESC LIMIT ?').all(sessionId, limit)
+      : this.db.prepare('SELECT * FROM session_turns WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?').all(sessionId, options.before, limit);
+    return (rows as Row[]).map(toTurn).reverse();
+  }
+
+  /** Turns that never finished (a crash or restart interrupted them), across all sessions. */
+  listUnfinishedTurns(): SessionTurn[] {
+    return (this.db.prepare("SELECT * FROM session_turns WHERE finished_at IS NULL AND author = 'agent' ORDER BY id").all() as Row[]).map(toTurn);
+  }
+
+  /** The saved layout of a project's workspace; null when none was saved or the stored JSON is unreadable. */
+  getLayout(projectId: string): WorkspaceLayout | null {
+    const row = this.db.prepare('SELECT layout FROM workspace_layouts WHERE project_id = ?').get(projectId) as { layout: string } | undefined;
+    return row ? safeJson<WorkspaceLayout | null>(row.layout, null) : null;
+  }
+
+  saveLayout(projectId: string, layout: WorkspaceLayout): void {
+    this.db.prepare(`INSERT INTO workspace_layouts (project_id, layout, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET layout = excluded.layout, updated_at = excluded.updated_at`)
+      .run(projectId, JSON.stringify(layout), now());
+  }
+}
+
 export interface Repositories {
   projects: ProjectRepository;
   tasks: TaskRepository;
@@ -443,12 +669,13 @@ export interface Repositories {
   messages: MessageRepository;
   config: ConfigRepository;
   usage: UsageRepository;
+  sessions: SessionRepository;
 }
 
 export function createRepositories(db: Db): Repositories {
   return {
     projects: new ProjectRepository(db), tasks: new TaskRepository(db), events: new EventRepository(db),
     approvals: new ApprovalRepository(db), messages: new MessageRepository(db), config: new ConfigRepository(db),
-    usage: new UsageRepository(db),
+    usage: new UsageRepository(db), sessions: new SessionRepository(db),
   };
 }

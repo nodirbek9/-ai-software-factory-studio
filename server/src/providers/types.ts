@@ -17,6 +17,11 @@ export interface ProviderRunRequest {
   onOutput?: (chunk: string) => void;
   /** Called on any sign of life (stdout/stderr bytes, log writes) so the idle watchdog knows the agent is working. */
   onHeartbeat?: () => void;
+  /**
+   * Present ONLY for workspace sessions (AGENT_WORKSPACE_SPEC.md §6). `resumeRef` is the provider's own session
+   * reference from an earlier turn (null on the first turn). Task and chat runs never set it.
+   */
+  session?: { id: string; resumeRef: string | null };
 }
 
 export interface ProviderRunResult {
@@ -24,6 +29,8 @@ export interface ProviderRunResult {
   usage: UsageInfo | null;
   /** The model id the provider reports it actually used (may differ from the requested alias). */
   model?: string;
+  /** The provider's resumable session reference (Claude session_id, Codex thread_id), when it reports one. */
+  sessionRef?: string;
 }
 
 export interface ProviderDetection {
@@ -45,6 +52,10 @@ export interface ProviderAdapter {
   readonly reportsActivity?: boolean;
   readonly models: string[];
   readonly defaultModel: string;
+  /** Static capabilities. `resume: 'native'` = the CLI can continue its own session from `session.resumeRef`. */
+  readonly supports?: { resume?: 'native' | 'none' };
+  /** Runtime resume check for providers whose support depends on the installed CLI version. */
+  resumeSupported?(settings: Record<string, string>): Promise<boolean>;
   detect(settings: Record<string, string>): Promise<ProviderDetection>;
   run(request: ProviderRunRequest, settings: Record<string, string>): Promise<ProviderRunResult>;
 }

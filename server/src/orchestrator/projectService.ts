@@ -167,10 +167,17 @@ export class ProjectService {
     const context = `Status: ${project.status}\nTasks:\n${tasks.map((t) => `- ${t.key} [${t.role}] ${t.status}${t.error ? ` (error: ${t.error.slice(0, 160)})` : ''}`).join('\n')}`;
     this.chats.add(key);
     const controller = new AbortController();
-    void this.ctx.executor.run({
-      project, task: null, role, prompt: () => chatPrompt(project, role, history, text, context),
-      cwd: project.integrationPath ?? project.workspacePath, mode: 'readonly', signal: controller.signal,
-      timeoutMs: CHAT_TIMEOUT_MS, fallbackOrder: getSettings(this.ctx).fallbackOrder,
+    const owner = { kind: 'session' as const, id: key, projectId, label: 'chat' };
+    void this.ctx.budget.acquire(owner, controller.signal).then(async (release) => {
+      try {
+        return await this.ctx.executor.run({
+          project, task: null, role, prompt: () => chatPrompt(project, role, history, text, context),
+          cwd: project.integrationPath ?? project.workspacePath, mode: 'readonly', signal: controller.signal,
+          timeoutMs: CHAT_TIMEOUT_MS, fallbackOrder: getSettings(this.ctx).fallbackOrder,
+        });
+      } finally {
+        release();
+      }
     }).then((out) => {
       const reply = this.ctx.repos.messages.add({ projectId, role, taskId: null, direction: 'agent', content: out.text.trim() || '(empty reply)' });
       this.ctx.events.emit({ projectId, role, type: 'agent.message', message: `${AGENT_ROLE_INFO[role].name} replied`, data: { message: reply } });

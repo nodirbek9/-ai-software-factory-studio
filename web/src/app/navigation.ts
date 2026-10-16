@@ -17,8 +17,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'home', label: 'Home', icon: Home, view: 'home', alsoActiveFor: ['dashboard'] },
   { id: 'projects', label: 'Projects', icon: FolderGit2, view: 'projects' },
-  { id: 'workspace', label: 'Agent Workspace', icon: Bot, view: null,
-    plannedReason: 'Multi-panel agent sessions arrive in Phase 3. Until then, chat with an agent from its card on Home.' },
+  { id: 'workspace', label: 'Agent Workspace', icon: Bot, view: 'workspace' },
   { id: 'builder', label: 'Workflow Builder', icon: Workflow, view: null,
     plannedReason: 'Visual workflow editing arrives in Phase 4. The current task graph is under Tasks.' },
   { id: 'tasks', label: 'Tasks', icon: ListChecks, view: 'workflows' },

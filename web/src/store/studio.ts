@@ -5,14 +5,14 @@ import type {
 } from '@asf/shared';
 import { api, eventsUrl, patch, post, put } from '@/lib/api';
 
-export const VIEWS = ['home', 'dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models'] as const;
+export const VIEWS = ['home', 'dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /** V2 hash slugs per view (#/home, #/tasks, …). The V1 hashes (#/dashboard, #/monitor, …) keep working as aliases;
  *  the V1 Dashboard is the "Project board" (#/board). */
 const VIEW_SLUGS: Record<View, string> = {
   home: 'home', dashboard: 'board', monitor: 'runs', projects: 'projects', agents: 'agents', workflows: 'tasks', files: 'repos',
-  logs: 'logs', providers: 'providers', settings: 'settings', models: 'models',
+  logs: 'logs', providers: 'providers', settings: 'settings', models: 'models', workspace: 'workspace',
 };
 const SLUG_VIEWS: Record<string, View> = {
   ...Object.fromEntries(VIEWS.map((view) => [view, view])),
@@ -101,6 +101,14 @@ function upsert<T extends { id: string | number }>(list: T[], item: T): T[] {
   return copy;
 }
 
+/** Listeners for the V2 session stream (session.* and budget.updated). Output chunks never enter `events`. */
+const sessionEventListeners = new Set<(event: StudioEvent) => void>();
+export function onSessionEvent(listener: (event: StudioEvent) => void): () => void {
+  sessionEventListeners.add(listener);
+  return () => { sessionEventListeners.delete(listener); };
+}
+const isSessionStreamEvent = (type: string): boolean => type.startsWith('session.') || type === 'budget.updated';
+
 let source: EventSource | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let liveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -127,6 +135,10 @@ export const useStudio = create<StudioState>((set, get) => {
   };
 
   const applyEvent = (event: StudioEvent): void => {
+    if (isSessionStreamEvent(event.type)) {
+      sessionEventListeners.forEach((listener) => listener(event));
+      if (event.type === 'session.output') return;
+    }
     const state = get();
     const events = state.events.length >= MAX_EVENTS ? [...state.events.slice(-MAX_EVENTS + 1), event] : [...state.events, event];
     const patchState: Partial<StudioState> = { events };
@@ -160,7 +172,7 @@ export const useStudio = create<StudioState>((set, get) => {
         patchState.messages = { ...state.messages, [event.role]: upsert(current, message) };
       }
     }
-    if (forCurrent && event.type !== 'agent.output') scheduleRefresh();
+    if (forCurrent && event.type !== 'agent.output' && !isSessionStreamEvent(event.type)) scheduleRefresh();
     if (!liveTimer && (event.type.startsWith('task.') || event.type.startsWith('agent.') || event.type === 'provider.fallback')) {
       liveTimer = setTimeout(() => { liveTimer = null; void get().refreshLive(); }, LIVE_DEBOUNCE_MS);
     }

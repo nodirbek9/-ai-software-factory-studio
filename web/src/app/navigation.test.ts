@@ -18,6 +18,13 @@ describe('navigation model', () => {
     expect(isActive(home, 'monitor')).toBe(false);
   });
 
+  it('opens the multi-agent workspace from Agent Workspace', () => {
+    const workspace = NAV_ITEMS.find((item) => item.id === 'workspace')!;
+    expect(workspace.view).toBe('workspace');
+    expect(workspace.plannedReason).toBeUndefined();
+    expect(isActive(workspace, 'workspace')).toBe(true);
+  });
+
   it('explains every planned item with the phase that delivers it', () => {
     const planned = NAV_ITEMS.filter((item) => item.view === null);
     expect(planned.length).toBeGreaterThan(0);
@@ -42,7 +49,7 @@ describe('hash routing', () => {
 
   it.each<[string, View]>([
     ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'workflows'],
-    ['#/repos', 'files'], ['#/models', 'models'],
+    ['#/repos', 'files'], ['#/models', 'models'], ['#/workspace', 'workspace'],
   ])('resolves the V2 slug %s', (hash, view) => {
     expect(viewFromHash(hash)).toBe(view);
   });

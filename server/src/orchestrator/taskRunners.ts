@@ -233,6 +233,16 @@ ${buildPrompt(edits)}` : buildPrompt;
 const MAX_CONFLICT_ROUNDS = 2;
 const CONFLICT_MARKER = /^(<{7}|>{7})( |$)/m;
 
+/** Who answers merge conflicts while a branch is integrated: a task's agent or a workspace session's agent. */
+export interface ConflictResolver {
+  /** Name used in the message of the merge of the integration branch into the worktree ("merge <target> into <key>"). */
+  key: string;
+  /** Message of the merge commit on the integration branch. */
+  mergeMessage: string;
+  /** Has the owning agent remove the conflict markers in `files` of the worktree, verifies and commits the result. */
+  resolve: (files: string[], target: string) => Promise<void>;
+}
+
 /**
  * Merges the task branch into the integration branch. When parallel work changed the same lines, the integration
  * branch is merged into the task worktree and the task's own agent resolves the conflict markers; the result is
@@ -240,33 +250,50 @@ const CONFLICT_MARKER = /^(<{7}|>{7})( |$)/m;
  */
 async function integrate(args: RunnerArgs, project: Project, worktreePath: string, branch: string): Promise<string[]> {
   const { ctx, task } = args;
-  await clearLeftoverMarkers(args, project, worktreePath);
+  return integrateBranch(ctx, project, worktreePath, branch, {
+    key: task.key,
+    mergeMessage: `merge ${task.key}: ${task.title}`,
+    resolve: (files, target) => askAgentToResolve(args, project, worktreePath, files, target),
+  });
+}
+
+/** The integrate() path for any branch with its own worktree (tasks and edit-mode workspace sessions). */
+export async function integrateBranch(ctx: StudioContext, project: Project, worktreePath: string, branch: string,
+  resolver: ConflictResolver): Promise<string[]> {
+  await clearLeftoverMarkers(project, worktreePath, resolver);
   for (let round = 0; ; round += 1) {
     try {
       return await ctx.integrationLock.run(project.id, async () => {
         const before = await git(integrationPath(project), ['rev-parse', 'HEAD']);
-        await ctx.workspace.mergeIntoIntegration(project, branch, `merge ${task.key}: ${task.title}`);
+        await ctx.workspace.mergeIntoIntegration(project, branch, resolver.mergeMessage);
         return changedFiles(integrationPath(project), before);
       });
     } catch (error) {
       if (!(error instanceof MergeConflictError) || round >= MAX_CONFLICT_ROUNDS) throw error;
-      await resolveConflicts(args, project, worktreePath);
+      await resolveConflicts(project, worktreePath, resolver);
     }
   }
 }
 
-async function resolveConflicts(args: RunnerArgs, project: Project, worktreePath: string): Promise<void> {
-  const { task } = args;
+async function resolveConflicts(project: Project, worktreePath: string, resolver: ConflictResolver): Promise<void> {
   const target = project.integrationBranch!;
-  await git(worktreePath, ['merge', '--no-ff', '-m', `merge ${target} into ${task.key}`, target], true);
+  await git(worktreePath, ['merge', '--no-ff', '-m', `merge ${target} into ${resolver.key}`, target], true);
   const conflicted = (await git(worktreePath, ['diff', '--name-only', '--diff-filter=U'])).split(/\r?\n/).filter(Boolean);
   if (!conflicted.length) return; // the integration branch merged cleanly into the task branch
   try {
-    await askAgentToResolve(args, project, worktreePath, conflicted, target);
+    await resolver.resolve(conflicted, target);
   } catch (error) {
     await git(worktreePath, ['merge', '--abort'], true);
     throw error;
   }
+}
+
+/** The files among `files` that still contain conflict markers. */
+export function filesWithConflictMarkers(worktreePath: string, files: string[]): string[] {
+  return files.filter((file) => {
+    const full = path.join(worktreePath, file);
+    return fs.existsSync(full) && CONFLICT_MARKER.test(fs.readFileSync(full, 'utf8'));
+  });
 }
 
 /** Files changed on this task branch (vs the integration branch) that still contain conflict markers. */
@@ -278,10 +305,10 @@ async function filesWithMarkers(project: Project, worktreePath: string): Promise
   });
 }
 
-async function clearLeftoverMarkers(args: RunnerArgs, project: Project, worktreePath: string): Promise<void> {
+async function clearLeftoverMarkers(project: Project, worktreePath: string, resolver: ConflictResolver): Promise<void> {
   const marked = await filesWithMarkers(project, worktreePath);
   if (!marked.length) return;
-  await askAgentToResolve(args, project, worktreePath, marked, project.integrationBranch!);
+  await resolver.resolve(marked, project.integrationBranch!);
 }
 
 async function askAgentToResolve(args: RunnerArgs, project: Project, worktreePath: string, conflicted: string[], target: string): Promise<void> {
@@ -295,10 +322,7 @@ async function askAgentToResolve(args: RunnerArgs, project: Project, worktreePat
       cwd: worktreePath, mode: 'edit', signal, ...limits(ctx), fallbackOrder: getSettings(ctx).fallbackOrder,
     });
     if (!output.editsFiles) ctx.workspace.applyEdits(worktreePath, parseFileProtocol(output.text).files);
-    const unresolved = conflicted.filter((file) => {
-      const full = path.join(worktreePath, file);
-      return fs.existsSync(full) && CONFLICT_MARKER.test(fs.readFileSync(full, 'utf8'));
-    });
+    const unresolved = filesWithConflictMarkers(worktreePath, conflicted);
     if (unresolved.length) throw new AgentOutputError(`Conflict markers are still present in: ${unresolved.join(', ')}`);
     await ctx.workspace.commit(worktreePath, `merge: resolve conflicts with ${target} in ${task.key}`);
     ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'git.conflict',

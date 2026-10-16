@@ -297,6 +297,23 @@ export class WorkspaceManager {
     return { worktreePath, branch };
   }
 
+  /**
+   * Own worktree of an edit-mode workspace session: branch asf/<slug>/session-<n> from the integration HEAD. A branch
+   * of that name that already exists (the studio never deletes branches) is checked out again instead of recreated.
+   */
+  async createSessionWorktree(project: Project, sessionNumber: number): Promise<{ worktreePath: string; branch: string; baseCommit: string }> {
+    if (!project.integrationPath) throw new WorkspaceError('Project has no integration worktree');
+    const name = `session-${sessionNumber}`;
+    const branch = `asf/${project.slug}/${name}`;
+    const worktreePath = path.join(this.config.worktreesDir, project.id, name);
+    if (fs.existsSync(worktreePath)) await this.removeWorktree(project, worktreePath);
+    const existing = await git(project.workspacePath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], true);
+    const baseCommit = existing || await headCommit(project.integrationPath);
+    await this.repoLock.run(project.workspacePath, () => git(project.workspacePath,
+      existing ? ['worktree', 'add', worktreePath, branch] : ['worktree', 'add', '-b', branch, worktreePath, baseCommit]));
+    return { worktreePath, branch, baseCommit };
+  }
+
   async removeWorktree(project: Project, worktreePath: string): Promise<void> {
     if (!isInside(path.resolve(worktreePath), path.join(this.config.worktreesDir, project.id))) {
       throw new WorkspaceError('Refusing to remove a worktree the studio does not own');

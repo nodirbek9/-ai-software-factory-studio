@@ -11,7 +11,13 @@ const EXECUTION_FIELDS = [
   { key: 'idleTimeoutMinutes', label: 'Stop an agent after this many minutes without activity', min: 2, max: 120 },
   { key: 'taskTimeoutMinutes', label: 'Longest single agent run (minutes)', min: 5, max: 480 },
   { key: 'maxFixRounds', label: 'Fix rounds per check', min: 0, max: 5 },
+  { key: 'maxAgentProcesses', label: 'Agent processes at once', min: 1, max: 8 },
 ] as const;
+
+const FIELD_HINTS: Partial<Record<(typeof EXECUTION_FIELDS)[number]['key'], (min: number, max: number) => string>> = {
+  maxFixRounds: (min, max) => `Automatic fixes after red tests or a FAIL review, counted separately for each check (tests, security, review), ${min} to ${max} (0 = off).`,
+  maxAgentProcesses: () => 'CLI agent processes running at the same time across tasks and workspace sessions (each Claude process uses several hundred MB of RAM).',
+};
 
 function ExecutionForm({ settings, providers }: { settings: StudioSettings; providers: ProviderInfo[] }) {
   const [values, setValues] = useState(() => ({
@@ -20,6 +26,7 @@ function ExecutionForm({ settings, providers }: { settings: StudioSettings; prov
     taskTimeoutMinutes: String(settings.taskTimeoutMinutes),
     idleTimeoutMinutes: String(settings.idleTimeoutMinutes ?? 15),
     maxFixRounds: String(settings.maxFixRounds ?? 2),
+    maxAgentProcesses: String(settings.maxAgentProcesses ?? 3),
   }));
   const [order, setOrder] = useState(() => [...new Set(settings.fallbackOrder)]);
   const [included, setIncluded] = useState(() => [...settings.fallbackOrder]);
@@ -59,6 +66,7 @@ function ExecutionForm({ settings, providers }: { settings: StudioSettings; prov
       taskTimeoutMinutes: Number(values.taskTimeoutMinutes),
       idleTimeoutMinutes: Number(values.idleTimeoutMinutes),
       maxFixRounds: Number(values.maxFixRounds),
+      maxAgentProcesses: Number(values.maxAgentProcesses),
       fallbackOrder: providerIds.filter((id) => included.includes(id)),
     };
     setSaving(true);
@@ -86,7 +94,7 @@ function ExecutionForm({ settings, providers }: { settings: StudioSettings; prov
             const value = Number(values[key]);
             const invalid = !Number.isInteger(value) || value < min || value > max;
             return (
-              <Field key={key} label={label} hint={key === 'maxFixRounds' ? `Automatic fixes after red tests or a FAIL review, counted separately for each check (tests, security, review), ${min} to ${max} (0 = off).` : `Whole number from ${min} to ${max}.`}>
+              <Field key={key} label={label} hint={FIELD_HINTS[key]?.(min, max) ?? `Whole number from ${min} to ${max}.`}>
                 <Input type="number" min={min} max={max} step={1} required value={values[key]}
                   aria-invalid={invalid}
                   onChange={(event) => {
