@@ -34,7 +34,7 @@ export function budgetFixture(overrides: Partial<ProcessBudgetSnapshot> = {}): P
 
 export function taskFixture(overrides: Partial<Task> = {}): Task {
   return {
-    id: 'task-a', projectId: 'project-1', key: 'plan', title: 'Write the technical plan', description: '', role: 'architect', kind: 'architecture',
+    id: 'task-a', projectId: 'project-1', runId: 'run-project-1', nodeId: null, options: {}, key: 'plan', title: 'Write the technical plan', description: '', role: 'architect', kind: 'architecture',
     status: 'completed', dependsOn: [], orderIndex: 0, attempt: 1, maxAttempts: 3, checkpoint: 'merged', branch: null, worktreePath: null,
     providerId: 'claude-code', model: 'claude-default', resultSummary: null, error: null, filesChanged: [], testResult: null, usage: null,
     startedAt: '2026-10-16T10:00:00Z', finishedAt: '2026-10-16T10:05:00Z', updatedAt: '2026-10-16T10:05:00Z', ...overrides,

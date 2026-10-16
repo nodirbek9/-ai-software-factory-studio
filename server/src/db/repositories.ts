@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type {
   AgentConfig, AgentMessage, AgentRole, AgentSession, Approval, ApprovalKind, ApprovalStatus, CheckpointStage, EffortLevel,
   EventLevel, EventsPage, Project, ProjectStatus, SessionContinuity, SessionMode, SessionStatus, SessionTurn, StudioEvent,
-  Task, TaskKind, TaskStatus, TestResult, UsageInfo, WorkspaceLayout,
+  Task, TaskKind, TaskNodeOptions, TaskStatus, TestResult, UsageInfo, WorkspaceLayout,
 } from '@asf/shared';
 import type { Db } from './database.ts';
+import { RunRepository, WorkflowRepository } from './runRepositories.ts';
 import { redact } from '../security/redact.ts';
 
 type Row = Record<string, unknown>;
@@ -84,7 +85,8 @@ export class ProjectRepository {
 
 function toTask(r: Row): Task {
   return {
-    id: String(r.id), projectId: String(r.project_id), key: String(r.key), title: String(r.title),
+    id: String(r.id), projectId: String(r.project_id), runId: String(r.run_id), nodeId: str(r.node_id),
+    options: safeJson<TaskNodeOptions>(r.options, {}), key: String(r.key), title: String(r.title),
     description: String(r.description), role: r.role as AgentRole, kind: r.kind as TaskKind, status: r.status as TaskStatus,
     dependsOn: json<string[]>(r.depends_on, []), orderIndex: Number(r.order_index), attempt: Number(r.attempt),
     maxAttempts: Number(r.max_attempts), checkpoint: r.checkpoint as CheckpointStage, branch: str(r.branch),
@@ -96,19 +98,24 @@ function toTask(r: Row): Task {
 }
 
 export interface NewTask {
+  /** Run the task belongs to; task keys are unique per run. */
+  runId: string;
+  /** Workflow node that produced the task (null for runtime tasks such as fix rounds). */
+  nodeId?: string | null;
+  options?: TaskNodeOptions;
   key: string; title: string; description: string; role: AgentRole; kind: TaskKind;
   dependsOn: string[]; orderIndex: number; maxAttempts: number; status?: TaskStatus;
 }
 
 export type TaskPatch = Partial<Pick<Task,
   'status' | 'attempt' | 'maxAttempts' | 'checkpoint' | 'branch' | 'worktreePath' | 'providerId' | 'model' | 'resultSummary'
-  | 'error' | 'filesChanged' | 'testResult' | 'usage' | 'startedAt' | 'finishedAt' | 'dependsOn' | 'orderIndex'>>;
+  | 'error' | 'filesChanged' | 'testResult' | 'usage' | 'startedAt' | 'finishedAt' | 'dependsOn' | 'orderIndex' | 'options'>>;
 
 const TASK_COLUMNS: Record<keyof TaskPatch, string> = {
   status: 'status', attempt: 'attempt', maxAttempts: 'max_attempts', checkpoint: 'checkpoint', branch: 'branch',
   worktreePath: 'worktree_path', providerId: 'provider_id', model: 'model', resultSummary: 'result_summary', error: 'error',
   filesChanged: 'files_changed', testResult: 'test_result', usage: 'usage', startedAt: 'started_at', finishedAt: 'finished_at',
-  dependsOn: 'depends_on', orderIndex: 'order_index',
+  dependsOn: 'depends_on', orderIndex: 'order_index', options: 'options',
 };
 const JSON_TASK_FIELDS = new Set<keyof TaskPatch>(['filesChanged', 'testResult', 'usage', 'dependsOn']);
 
@@ -117,10 +124,11 @@ export class TaskRepository {
 
   create(projectId: string, input: NewTask): Task {
     const id = randomUUID();
-    this.db.prepare(`INSERT INTO tasks (id, project_id, key, title, description, role, kind, status, depends_on, order_index,
-      max_attempts, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, projectId, input.key, input.title, input.description, input.role, input.kind, input.status ?? 'pending',
-        JSON.stringify(input.dependsOn), input.orderIndex, input.maxAttempts, now());
+    this.db.prepare(`INSERT INTO tasks (id, project_id, run_id, node_id, options, key, title, description, role, kind, status,
+      depends_on, order_index, max_attempts, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, projectId, input.runId, input.nodeId ?? null, JSON.stringify(input.options ?? {}), input.key, input.title,
+        input.description, input.role, input.kind, input.status ?? 'pending', JSON.stringify(input.dependsOn), input.orderIndex,
+        input.maxAttempts, now());
     return this.get(id)!;
   }
 
@@ -129,8 +137,13 @@ export class TaskRepository {
     return row ? toTask(row) : null;
   }
 
+  /** Every task of the project, across all of its runs (V1 views). */
   listByProject(projectId: string): Task[] {
     return (this.db.prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY order_index, rowid').all(projectId) as Row[]).map(toTask);
+  }
+
+  listByRun(runId: string): Task[] {
+    return (this.db.prepare('SELECT * FROM tasks WHERE run_id = ? ORDER BY order_index, rowid').all(runId) as Row[]).map(toTask);
   }
 
   listByStatus(status: TaskStatus): Task[] {
@@ -143,6 +156,7 @@ export class TaskRepository {
       const sets = keys.map((k) => `${TASK_COLUMNS[k]} = ?`).join(', ');
       const values = keys.map((k) => {
         const value = patch[k];
+        if (k === 'options') return JSON.stringify(value ?? {});
         if (JSON_TASK_FIELDS.has(k)) return value === null || value === undefined ? null : JSON.stringify(value);
         return (value ?? null) as string | number | null;
       });
@@ -158,6 +172,11 @@ export class TaskRepository {
 
   maxOrderIndex(projectId: string): number {
     const row = this.db.prepare('SELECT MAX(order_index) AS m FROM tasks WHERE project_id = ?').get(projectId) as { m: number | null };
+    return row.m ?? 0;
+  }
+
+  maxOrderIndexForRun(runId: string): number {
+    const row = this.db.prepare('SELECT MAX(order_index) AS m FROM tasks WHERE run_id = ?').get(runId) as { m: number | null };
     return row.m ?? 0;
   }
 }
@@ -360,15 +379,17 @@ export interface UsageRecord {
   projectId: string | null; taskId: string | null; role: AgentRole | null; providerId: string; model: string | null; usage: UsageInfo;
   /** Workspace session that made the call (V2); null for task runs, chat and tests. */
   sessionId?: string | null;
+  /** Workflow run of the task that made the call (V2 Phase 4); null without a task. */
+  runId?: string | null;
 }
 
 export class UsageRepository {
   constructor(private readonly db: Db) {}
 
   record(input: UsageRecord): void {
-    this.db.prepare(`INSERT INTO usage_records (project_id, task_id, role, provider_id, model, input_tokens, output_tokens, cost_usd, created_at, session_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.projectId, input.taskId, input.role, input.providerId, input.model,
-      input.usage.inputTokens, input.usage.outputTokens, input.usage.costUsd, now(), input.sessionId ?? null);
+    this.db.prepare(`INSERT INTO usage_records (project_id, task_id, role, provider_id, model, input_tokens, output_tokens, cost_usd, created_at,
+      session_id, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.projectId, input.taskId, input.role, input.providerId, input.model,
+      input.usage.inputTokens, input.usage.outputTokens, input.usage.costUsd, now(), input.sessionId ?? null, input.runId ?? null);
   }
 
   /** Summed usage of one workspace session; null when it made no recorded call. */
@@ -670,12 +691,15 @@ export interface Repositories {
   config: ConfigRepository;
   usage: UsageRepository;
   sessions: SessionRepository;
+  runs: RunRepository;
+  workflows: WorkflowRepository;
 }
 
 export function createRepositories(db: Db): Repositories {
   return {
     projects: new ProjectRepository(db), tasks: new TaskRepository(db), events: new EventRepository(db),
     approvals: new ApprovalRepository(db), messages: new MessageRepository(db), config: new ConfigRepository(db),
-    usage: new UsageRepository(db), sessions: new SessionRepository(db),
+    usage: new UsageRepository(db), sessions: new SessionRepository(db), runs: new RunRepository(db),
+    workflows: new WorkflowRepository(db),
   };
 }

@@ -6,6 +6,7 @@ import { registerRoutes } from './api/routes.ts';
 import { loadConfig, type AppConfig } from './config.ts';
 import { openDatabase } from './db/database.ts';
 import { createRepositories } from './db/repositories.ts';
+import { STANDARD_WORKFLOW } from './workflows/standardTemplate.ts';
 import { EventStream } from './events/eventStream.ts';
 import { getSettings, KeyedMutex, type StudioContext } from './orchestrator/context.ts';
 import { ProcessBudget, throttleBudgetUpdates } from './orchestrator/processBudget.ts';
@@ -36,6 +37,7 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
   const releaseLock = await acquireInstanceLock(config.dataDir);
   const db = openDatabase(config.dbPath);
   const repos = createRepositories(db);
+  repos.workflows.ensureBuiltin(STANDARD_WORKFLOW);
   const events = new EventStream(repos.events);
   const registry = new ProviderRegistry(repos.config, repos.usage, config.env, options.extraProviders);
   const workspace = new WorkspaceManager(config);

@@ -92,7 +92,8 @@ describe('end-to-end workflow with the sample project', () => {
     expect(qa.testResult?.passed).toBe(true);
     expect(qa.resultSummary).toMatch(/Re-ran the existing tests after the fix/); // QA wrote no new tests on the re-run
     expect(fix.orderIndex).toBeLessThan(qa.orderIndex); // inserted before the failed verification
-    expect(fixRoundsUsed(studio.ctx, project.id, 'api-tests')).toBe(1);
+    expect(fixRoundsUsed(studio.ctx, qa.runId, 'api-tests')).toBe(1);
+    expect(fix.runId).toBe(qa.runId);
     expect(await git(done.integrationPath!, ['log', '--oneline'])).toContain('merge fix-api-tests-1');
   });
 
@@ -124,7 +125,7 @@ describe('end-to-end workflow with the sample project', () => {
     studio.scheduler.retryTask(qa.id);
     expect(taskByKey(studio, project.id, 'security-review')?.status).toBe('pending');
     await waitFor(() => taskByKey(studio, project.id, 'api-tests')!.attempt === 3 && taskByKey(studio, project.id, 'api-tests')!.status === 'failed', 60_000, 'retry');
-    expect(fixRoundsUsed(studio.ctx, project.id, 'api-tests')).toBe(1);
+    expect(fixRoundsUsed(studio.ctx, qa.runId, 'api-tests')).toBe(1);
   });
 
   test('fix loop: a FAIL review verdict sends the findings to a fix task and the review runs again', async () => {

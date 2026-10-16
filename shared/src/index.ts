@@ -19,7 +19,10 @@ export type ProjectStatus =
 export type TaskStatus =
   | 'pending' | 'ready' | 'running' | 'waiting_approval' | 'completed' | 'failed' | 'blocked' | 'cancelled';
 
-export type TaskKind = 'plan' | 'architecture' | 'gate' | 'implement' | 'test' | 'security' | 'review' | 'report';
+export type TaskKind =
+  | 'plan' | 'architecture' | 'gate' | 'implement' | 'test' | 'security' | 'review' | 'report'
+  /** V2 workflow nodes (Phase 4): `command` runs one allowlisted command, `notify` emits an in-app notification. */
+  | 'command' | 'notify';
 
 export type CheckpointStage = 'none' | 'worktree' | 'agent_done' | 'committed' | 'merged';
 
@@ -63,6 +66,12 @@ export interface Project {
 export interface Task {
   id: string;
   projectId: string;
+  /** Run this task belongs to (V2 Phase 4, D-009). Task keys are unique per run. */
+  runId: string;
+  /** Workflow node that produced the task (null for backfilled V1 tasks and runtime fix tasks). */
+  nodeId: string | null;
+  /** Per-node options compiled from the workflow; `{}` for V1-style tasks. */
+  options: TaskNodeOptions;
   key: string;
   title: string;
   description: string;
@@ -542,4 +551,259 @@ export interface WorkspaceLayout {
   minimized: string[];
   recentlyClosed: { sessionId: string; title: string; closedAt: string }[];
   drawer: { open: boolean; tab: 'coordination' | 'context' | 'artifacts'; width: number };
+}
+
+// ------------------------------------------------------------------ V2 workflows and runs (Phase 4, WORKFLOW_ENGINE_SPEC.md)
+
+/** Options a workflow node compiles onto its task row (JSON column `tasks.options`; `{}` for V1 tasks). */
+export interface TaskNodeOptions {
+  /** Agent overrides; absent = the role's AgentConfig. */
+  providerId?: string;
+  model?: string;
+  effort?: EffortLevel;
+  /** Task-level hard cap in minutes; absent = setting taskTimeoutMinutes. */
+  timeoutMinutes?: number;
+  /** 'continue' lets dependants run after a failure (not allowed on verification tasks). */
+  onFailure?: 'stop' | 'continue';
+  /** Fix-loop rounds for this verification task (0–5); absent = setting maxFixRounds. */
+  fixRoundsMax?: number;
+  /** Who fixes a failed verification; 'auto' (default) = V1 fixRoleFor(). */
+  fixRole?: 'auto' | 'backend' | 'frontend';
+  /** `command` tasks: the one command to run in the integration worktree; `test` tasks: test-command override (qa node). */
+  command?: string;
+  /** `notify` tasks: message template ({{project}}, {{run}}, {{status}}). */
+  message?: string;
+  /** decompose (`plan`) tasks: add V1's qa-verify task when the PM planned no QA task (default true). */
+  requireQa?: boolean;
+}
+
+export const WORKFLOW_NODE_TYPES = [
+  'trigger', 'requirement', 'architect', 'decompose', 'backend', 'frontend', 'qa', 'security', 'reviewer',
+  'approval', 'quality-gate', 'fix', 'retry', 'tool', 'artifact', 'notify',
+  // planned: visible in the palette, disabled with a reason
+  'delay', 'deploy', 'condition', 'notify-external',
+] as const;
+export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
+export type WorkflowHandle = 'out' | 'pass' | 'fail';
+
+export interface WorkflowNode {
+  /** [a-z0-9-]{1,40}; becomes the task key (the Standard template uses the V1 keys). */
+  id: string;
+  type: WorkflowNodeType;
+  label?: string;
+  position: { x: number; y: number };
+  config: Record<string, unknown>;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  /** Absent = 'out'. 'pass'/'fail' only on quality gates. */
+  sourceHandle?: WorkflowHandle;
+  target: string;
+  /** 'retry' only for fix → verification back edges. Absent = 'normal'. */
+  kind?: 'normal' | 'retry';
+}
+
+export interface WorkflowGraph {
+  schemaVersion: 1;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}
+
+export const WORKFLOW_LIMITS = {
+  maxNodes: 60, maxEdges: 120, maxGraphBytes: 200_000, maxLabel: 80, maxDescription: 2000, maxFixRounds: 5, maxAttempts: 5,
+} as const;
+
+/** Id of the built-in, read-only "Standard Software Factory" template (compiles to the V1 graph). */
+export const STANDARD_WORKFLOW_ID = 'wf-standard';
+
+export interface WorkflowSummary {
+  id: string;
+  /** null = global template. */
+  projectId: string | null;
+  name: string;
+  description: string;
+  version: number;
+  builtin: boolean;
+  archived: boolean;
+  nodeCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Workflow extends WorkflowSummary {
+  graph: WorkflowGraph;
+}
+
+export interface SaveWorkflowInput {
+  name: string;
+  description?: string;
+  /** Used on create only (null = global); PUT keeps the stored project. */
+  projectId?: string | null;
+  graph: WorkflowGraph;
+}
+
+export type CatalogFieldType = 'text' | 'textarea' | 'number' | 'select' | 'boolean' | 'provider' | 'model' | 'effort';
+
+export interface CatalogField {
+  key: string;
+  label: string;
+  type: CatalogFieldType;
+  default?: string | number | boolean;
+  min?: number;
+  max?: number;
+  options?: { value: string; label: string }[];
+  help?: string;
+}
+
+export type NodeCategory = 'trigger' | 'input' | 'agent' | 'control' | 'tool' | 'output';
+
+export interface NodeCatalogEntry {
+  type: WorkflowNodeType;
+  label: string;
+  category: NodeCategory;
+  description: string;
+  executable: boolean;
+  /** Why a planned node cannot run yet (null when executable). */
+  plannedReason: string | null;
+  /** Agent role the node runs as, if any. */
+  role: AgentRole | null;
+  /** Whether the node accepts incoming edges, and its output handles. */
+  handles: { input: boolean; outputs: WorkflowHandle[] };
+  fields: CatalogField[];
+}
+
+export type WorkflowIssueCode =
+  | 'E_TRIGGER' | 'E_UNREACHABLE' | 'E_PLANNED' | 'E_CYCLE' | 'E_HANDLE' | 'E_FIX_TARGET' | 'E_SLOT'
+  | 'E_PROVIDER' | 'E_COMMAND' | 'E_LIMIT' | 'E_CONFIG' | 'E_EDGE';
+
+export interface WorkflowIssue {
+  code: WorkflowIssueCode;
+  severity: 'error' | 'warning';
+  message: string;
+  nodeId?: string;
+  edgeId?: string;
+}
+
+export interface ValidationResult {
+  /** true when there are no errors (warnings do not block a run). */
+  ok: boolean;
+  errors: WorkflowIssue[];
+  warnings: WorkflowIssue[];
+}
+
+/** One task row the compiler produces. */
+export interface CompiledTask {
+  key: string;
+  title: string;
+  description: string;
+  role: AgentRole;
+  kind: TaskKind;
+  dependsOn: string[];
+  orderIndex: number;
+  maxAttempts: number;
+  nodeId: string | null;
+  options: TaskNodeOptions;
+}
+
+/** Placeholder in a skeleton tail task's dependsOn: replaced at expansion time by the PM tasks' leaf keys. */
+export const SLOT_DEPENDENCY = '@slots';
+
+/**
+ * How the PM's tasks are placed when the graph has a `decompose` node (WORKFLOW_ENGINE_SPEC.md §6.3). The tail is
+ * inserted by expandPlan after the PM plan is known, together with the PM tasks.
+ */
+export interface CompiledSkeleton {
+  /** Key of the decompose (`plan`) task; null when the graph has no decompose node. */
+  decomposeKey: string | null;
+  /** Key PM tasks without dependencies depend on (Standard: 'plan-approval'). */
+  entryKey: string | null;
+  /** Implementation slots: PM tasks with that role get the slot's options. */
+  slots: { nodeId: string; role: 'backend' | 'frontend'; options: TaskNodeOptions }[];
+  /** Tasks inserted after the PM tasks (Standard: security-review, final-review, delivery-report). */
+  tail: CompiledTask[];
+  /** Add V1's qa-verify task when the PM planned no QA task. */
+  requireQa: boolean;
+  /** Options for the qa-verify task (from the qa node), when one exists. */
+  qaOptions: TaskNodeOptions | null;
+}
+
+export interface CompiledRun {
+  /** Tasks inserted when the run starts. */
+  tasks: CompiledTask[];
+  skeleton: CompiledSkeleton;
+  notes: string[];
+}
+
+export interface SimulationResult {
+  validation: ValidationResult;
+  /** Start tasks followed by the skeleton tail; empty when validation failed. */
+  tasks: CompiledTask[];
+  notes: string[];
+}
+
+export type RunStatus =
+  | 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'completed' | 'completed_with_failures' | 'failed' | 'cancelled';
+
+export interface Run {
+  id: string;
+  projectId: string;
+  number: number;
+  workflowId: string | null;
+  workflowName: string;
+  workflowVersion: number | null;
+  status: RunStatus;
+  trigger: 'manual' | 'backfill';
+  baseCommit: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  errorSummary: string | null;
+  durationMs: number | null;
+  /** Sum of measured usage_records cost of the run's tasks; null when no provider reported cost. */
+  costUsd: number | null;
+  tasksTotal: number;
+  tasksCompleted: number;
+}
+
+export interface RunsPage {
+  runs: Run[];
+  /** Pass as `before` (a run number) for the next page; null at the end. */
+  nextBefore: number | null;
+}
+
+export interface RunNodeStatus {
+  nodeId: string;
+  taskKeys: string[];
+  status: TaskStatus | 'not_started';
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  attempts: number;
+  providerId: string | null;
+  model: string | null;
+  costUsd: number | null;
+  error: string | null;
+}
+
+export interface RunTimelineEntry {
+  id: number;
+  at: string;
+  type: string;
+  level: EventLevel;
+  message: string;
+  taskId: string | null;
+  nodeId: string | null;
+}
+
+export interface RunTimeline {
+  run: Run;
+  graph: WorkflowGraph;
+  nodes: RunNodeStatus[];
+  tasks: Task[];
+  entries: RunTimelineEntry[];
+}
+
+export interface StartRunInput {
+  workflowId: string;
 }

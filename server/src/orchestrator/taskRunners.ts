@@ -104,9 +104,15 @@ async function commitDocument(ctx: StudioContext, project: Project, relativePath
 
 // ------------------------------------------------------------------ plan
 
-/** Adds the PM's tasks plus the mandatory verification tail, all behind the plan-approval gate. */
-export function expandPlan(ctx: StudioContext, args: { db: RunnerArgs['db']; project: Project }, plan: PlanOutput): Task[] {
-  const { project } = args;
+/** Standard-template node a PM-planned task belongs to: the implementation slot of its role, or the QA node. */
+function slotNodeId(role: Task['role']): string | null {
+  if (role === 'backend' || role === 'frontend') return role;
+  return role === 'qa' ? 'qa-verify' : null;
+}
+
+/** Adds the PM's tasks plus the mandatory verification tail, all behind the plan-approval gate, to the plan task's run. */
+export function expandPlan(ctx: StudioContext, args: { db: RunnerArgs['db']; project: Project; runId: string }, plan: PlanOutput): Task[] {
+  const { project, runId } = args;
   const reserved = new Set(['plan', 'architecture', GATE_KEY, 'security-review', 'final-review', 'delivery-report', 'qa-verify']);
   const clash = plan.tasks.find((t) => reserved.has(t.key));
   if (clash) throw new AgentOutputError(`Plan uses a reserved task key: ${clash.key}`);
@@ -117,21 +123,21 @@ export function expandPlan(ctx: StudioContext, args: { db: RunnerArgs['db']; pro
   const dependedOn = new Set(plan.tasks.flatMap((t) => t.dependsOn));
   let leaves = plan.tasks.filter((t) => !dependedOn.has(t.key)).map((t) => t.key);
   const hasQa = plan.tasks.some((t) => t.role === 'qa');
-  let order = ctx.repos.tasks.maxOrderIndex(project.id) + 1;
+  let order = ctx.repos.tasks.maxOrderIndexForRun(runId) + 1;
 
   return transaction(args.db, () => {
     const created: Task[] = [];
     for (const t of plan.tasks) {
       created.push(ctx.repos.tasks.create(project.id, {
-        key: t.key, title: t.title, description: t.description, role: t.role,
+        runId, nodeId: slotNodeId(t.role), key: t.key, title: t.title, description: t.description, role: t.role,
         kind: t.role === 'qa' ? 'test' : 'implement',
         dependsOn: t.dependsOn.length ? t.dependsOn : [GATE_KEY], orderIndex: order++, maxAttempts,
       }));
     }
     if (!hasQa) {
       created.push(ctx.repos.tasks.create(project.id, {
-        key: 'qa-verify', title: 'Verify with automated tests', role: 'qa', kind: 'test', orderIndex: order++, maxAttempts,
-        description: `Add tests covering the specification and run \`${project.testCommand}\`.`, dependsOn: leaves,
+        runId, nodeId: 'qa-verify', key: 'qa-verify', title: 'Verify with automated tests', role: 'qa', kind: 'test', orderIndex: order++,
+        maxAttempts, description: `Add tests covering the specification and run \`${project.testCommand}\`.`, dependsOn: leaves,
       }));
       leaves = ['qa-verify'];
     }
@@ -142,7 +148,7 @@ export function expandPlan(ctx: StudioContext, args: { db: RunnerArgs['db']; pro
     ];
     let previous = leaves;
     for (const t of tail) {
-      created.push(ctx.repos.tasks.create(project.id, { ...t, dependsOn: previous, orderIndex: order++, maxAttempts }));
+      created.push(ctx.repos.tasks.create(project.id, { ...t, runId, nodeId: t.key, dependsOn: previous, orderIndex: order++, maxAttempts }));
       previous = [t.key];
     }
     return created;
@@ -155,7 +161,7 @@ async function runPlan({ ctx, project, task, signal, db }: RunnerArgs): Promise<
     signal, ...limits(ctx), fallbackOrder: getSettings(ctx).fallbackOrder,
   });
   const plan = parsePlan(output.text);
-  const created = expandPlan(ctx, { db, project }, plan);
+  const created = expandPlan(ctx, { db, project, runId: task.runId }, plan);
   for (const t of created) emitTask(ctx, t, `Task planned: ${t.title}`);
   return { summary: `Planned ${plan.tasks.length} implementation tasks (+${created.length - plan.tasks.length} verification steps).` };
 }
@@ -429,6 +435,11 @@ async function runReport({ ctx, project }: RunnerArgs): Promise<TaskOutcome> {
   return { summary: 'Delivery report generated (ASF_REPORT.md on the integration branch).', filesChanged: ['ASF_REPORT.md'] };
 }
 
+/** Placeholder for the V2 workflow task kinds until their runners land (Phase 4 batch B). */
+async function notWiredYet({ task }: RunnerArgs): Promise<TaskOutcome> {
+  throw new PermanentTaskError(`"${task.kind}" tasks cannot run yet: workflow runs arrive in Phase 4 batch B`);
+}
+
 export const TASK_RUNNERS: Record<Exclude<Task['kind'], 'gate'>, (args: RunnerArgs) => Promise<TaskOutcome>> = {
   plan: runPlan,
   architecture: runArchitecture,
@@ -437,6 +448,8 @@ export const TASK_RUNNERS: Record<Exclude<Task['kind'], 'gate'>, (args: RunnerAr
   security: runReview,
   review: runReview,
   report: runReport,
+  command: notWiredYet,
+  notify: notWiredYet,
 };
 
 export { CommandNotAllowedError, GATE_KEY };

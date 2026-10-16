@@ -1,8 +1,9 @@
 import type { AgentRole, AgentStatus, AgentView, Approval, CreateProjectInput, Project, ProjectSnapshot, Task } from '@asf/shared';
-import { AGENT_ROLE_INFO, AGENT_ROLES } from '@asf/shared';
+import { AGENT_ROLE_INFO, AGENT_ROLES, STANDARD_WORKFLOW_ID } from '@asf/shared';
 import { chatPrompt } from '../agents/prompts.ts';
 import { transaction, type Db } from '../db/database.ts';
 import { redact } from '../security/redact.ts';
+import { STANDARD_WORKFLOW_GRAPH } from '../workflows/standardTemplate.ts';
 import { emitProject, getSettings, type StudioContext } from './context.ts';
 import type { TaskScheduler } from './scheduler.ts';
 import { approvedCommands, GATE_KEY } from './taskRunners.ts';
@@ -64,11 +65,16 @@ export class ProjectService {
     if (project.status !== 'draft') throw new ProjectError(`Planning already started (status: ${project.status})`, 409);
     const maxAttempts = getSettings(this.ctx).defaultMaxAttempts;
     transaction(this.db, () => {
-      this.ctx.repos.tasks.create(project.id, { key: 'plan', title: 'Create task plan from specification', role: 'pm', kind: 'plan',
-        description: 'Break the specification into dependency-aware tasks.', dependsOn: [], orderIndex: 1, maxAttempts });
-      this.ctx.repos.tasks.create(project.id, { key: 'architecture', title: 'Technical architecture plan', role: 'architect', kind: 'architecture',
-        description: 'Write the implementation plan for the planned tasks.', dependsOn: ['plan'], orderIndex: 2, maxAttempts });
-      this.ctx.repos.tasks.create(project.id, { key: GATE_KEY, title: 'Plan approval', role: 'pm', kind: 'gate',
+      // Batch B replaces this with RunService.start (P4-5); until then the V1 pipeline runs as a Standard-template run.
+      const workflowVersion = this.ctx.repos.workflows.get(STANDARD_WORKFLOW_ID)?.version ?? 1;
+      const { id: runId } = this.ctx.repos.runs.create({ projectId: project.id, workflowId: STANDARD_WORKFLOW_ID, workflowVersion,
+        snapshot: STANDARD_WORKFLOW_GRAPH, trigger: 'manual', baseCommit: project.baseCommit });
+      this.ctx.repos.tasks.create(project.id, { runId, nodeId: 'plan', key: 'plan', title: 'Create task plan from specification', role: 'pm',
+        kind: 'plan', description: 'Break the specification into dependency-aware tasks.', dependsOn: [], orderIndex: 1, maxAttempts });
+      this.ctx.repos.tasks.create(project.id, { runId, nodeId: 'architecture', key: 'architecture', title: 'Technical architecture plan',
+        role: 'architect', kind: 'architecture', description: 'Write the implementation plan for the planned tasks.', dependsOn: ['plan'],
+        orderIndex: 2, maxAttempts });
+      this.ctx.repos.tasks.create(project.id, { runId, nodeId: GATE_KEY, key: GATE_KEY, title: 'Plan approval', role: 'pm', kind: 'gate',
         description: 'The user reviews and approves the plan before any code is written.', dependsOn: ['architecture'], orderIndex: 3, maxAttempts: 1 });
     });
     const planning = this.scheduler.setProjectStatus(project, 'planning', 'Planning started');

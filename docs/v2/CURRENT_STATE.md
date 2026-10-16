@@ -1,6 +1,6 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 ~00:25 (Opus 5.5, account 1 at 95 % of its 5-hour limit). Update this file after every step.
+Last updated: 2026-10-17 ~00:50 (Opus 5.5, account 1, automated night run asf-v2-continue-0030; own 5 h window at ~5 %).
 
 ## Where we are
 - **V2 work happens here**: worktree `D:\jarvis 2\asf-v2`, branch `feature/v2-studio` (from `main` at
@@ -17,8 +17,13 @@ Last updated: 2026-10-17 ~00:25 (Opus 5.5, account 1 at 95 % of its 5-hour limit
 - **Owner (2026-10-16 23:35, before sleeping): continue through the next phases without asking; commits on
   `feature/v2-studio` are approved. Still never: merge to `main`, push, restart V1, paid APIs, global installs.**
 - Phase 3 batch 2 committed (see git log; 130 server + 259 web tests green). Browser check of the Workspace still to do.
-- **Next: Phase 3 browser check, then Phase 4** — job briefs ready in `.ai-jobs/phase3-batch2.json` (p3-sessions, p3-workspace-ui).
+- **Next: Phase 4 batches** (see NEXT_ACTIONS.md). Phase 3 browser check still open (needs the preview server).
 - The running V1 on 4317 still runs pre-0b code until the owner restarts `start-studio.cmd` (no agents running).
+
+## Phase 3 / Phase 4 status (00:50)
+- Phase 3 gates re-verified green at 00:35 (typecheck, build, 130 server + 259 web tests). Browser check NOT done: the automated run could not start the V2 preview server (start declined) — owner to do it or allow it.
+- **Phase 4 started**: contract appended to `shared/src/index.ts` (workflows/runs types, `Task.runId/nodeId/options`,
+  TaskKind `command|notify`), `server/src/workflows/standardTemplate.ts`, plan `docs/v2/phases/PHASE_4.md` (decisions P4-1..P4-5). Batch A running on account 4 (p4-db, p4-compiler Opus; p4-ui-state Sonnet). Server typecheck is red until p4-db lands (expected).
 
 ## Follow-ups noted
 - Verify whether Codex, Antigravity and Gemini CLIs load project-level config from a repository (S1 note).

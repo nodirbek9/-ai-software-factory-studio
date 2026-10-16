@@ -5,10 +5,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, test } from 'vitest';
 import type { EventsPage, OverviewResponse, SystemHealth, UsageSummary } from '@asf/shared';
 import { createStudio, type Studio } from '../src/app.ts';
-import { openDatabase } from '../src/db/database.ts';
+import { openDatabase, SCHEMA_VERSION } from '../src/db/database.ts';
 import { localDate } from '../src/db/repositories.ts';
 import { buildUsageSummary } from '../src/readModels/usage.ts';
-import { prepareSamples, tempDir } from './helpers.ts';
+import { createRun, prepareSamples, tempDir } from './helpers.ts';
 
 const studios: Studio[] = [];
 afterAll(async () => { for (const s of studios) await s.close(); });
@@ -39,9 +39,11 @@ function seedProjects(s: Studio) {
   const alpha = repos.projects.update(newProject('Alpha').id, { status: 'running' });
   const beta = repos.projects.update(newProject('Beta').id, { status: 'completed' });
   let order = 0;
+  const runs = new Map([alpha, beta].map((p) => [p.id, createRun(repos, p.id, p.status === 'completed' ? 'completed' : 'running').id]));
   const task = (projectId: string, key: string, role: 'architect' | 'backend' | 'frontend' | 'qa' | 'reviewer',
     kind: 'architecture' | 'implement' | 'test' | 'review', status: 'pending' | 'ready' | 'running' | 'completed' | 'failed') =>
-    repos.tasks.create(projectId, { key, title: `${key} task`, description: '', role, kind, dependsOn: [], orderIndex: order++, maxAttempts: 2, status });
+    repos.tasks.create(projectId, { runId: runs.get(projectId)!, key, title: `${key} task`, description: '', role, kind, dependsOn: [],
+      orderIndex: order++, maxAttempts: 2, status });
   const arch = task(alpha.id, 'arch', 'architect', 'architecture', 'completed');
   repos.tasks.update(arch.id, { startedAt: ago(10), finishedAt: ago(5), filesChanged: ['docs/plan.md'], providerId: 'fake-ok', model: 'm' });
   const be = task(alpha.id, 'be', 'backend', 'implement', 'running');
@@ -222,12 +224,11 @@ describe('migration backup', () => {
   test('an existing database is copied before pending migrations run; a fresh one is not', () => {
     const dir = tempDir('migrate');
     const file = path.join(dir, 'studio.db');
-    const fresh = openDatabase(file);
+    const latest = SCHEMA_VERSION;
+    // A database one schema version behind, so reopening has one migration pending.
+    const fresh = openDatabase(file, { upToVersion: latest - 1 });
     expect(fs.existsSync(path.join(dir, 'backups'))).toBe(false);
-    const latest = (fresh.prepare('SELECT version FROM schema_version').get() as { version: number }).version;
-    // Roll the last migration back so reopening has one pending.
-    fresh.exec(`DROP TABLE workspace_layouts; DROP TABLE session_turns; DROP TABLE agent_sessions;
-      ALTER TABLE usage_records DROP COLUMN session_id; UPDATE schema_version SET version = ${latest - 1}`);
+    expect((fresh.prepare('SELECT version FROM schema_version').get() as { version: number }).version).toBe(latest - 1);
     fresh.close();
 
     const upgraded = openDatabase(file);

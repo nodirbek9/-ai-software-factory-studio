@@ -13,7 +13,7 @@ import { runAllowedCommand } from '../src/workspace/commandRunner.ts';
 import { commitAll, git } from '../src/workspace/git.ts';
 import * as processRunner from '../src/workspace/processRunner.ts';
 import { isSensitivePath, WorkspaceManager } from '../src/workspace/workspaceManager.ts';
-import { approvePlan, prepareSamples, projectOf, taskByKey, tempDir, waitFor } from './helpers.ts';
+import { approvePlan, createRun, prepareSamples, projectOf, taskByKey, tempDir, waitFor } from './helpers.ts';
 
 let studios: Studio[] = [];
 afterEach(async () => {
@@ -104,9 +104,10 @@ describe('R2 retries and dispatch respect dependencies', () => {
     const project = repos.projects.create({ name: 'Deps', slug: `deps-${statusB}`, description: '', spec: 'x', workspaceMode: 'new',
       workspacePath: tempDir('deps'), testCommand: 'npm test' });
     repos.projects.update(project.id, { status: 'running' });
-    const a = repos.tasks.create(project.id, { key: 'a', title: 'A', description: '', role: 'backend', kind: 'implement', dependsOn: [],
+    const runId = createRun(repos, project.id).id;
+    const a = repos.tasks.create(project.id, { runId, key: 'a', title: 'A', description: '', role: 'backend', kind: 'implement', dependsOn: [],
       orderIndex: 1, maxAttempts: 1, status: statusA });
-    const b = repos.tasks.create(project.id, { key: 'b', title: 'B', description: '', role: 'backend', kind: 'implement', dependsOn: ['a'],
+    const b = repos.tasks.create(project.id, { runId, key: 'b', title: 'B', description: '', role: 'backend', kind: 'implement', dependsOn: ['a'],
       orderIndex: 2, maxAttempts: 1, status: statusB });
     return { a, b };
   }

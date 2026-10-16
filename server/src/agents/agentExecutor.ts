@@ -183,7 +183,7 @@ export class AgentExecutor {
       if (result.usage) {
         // Built as a variable so this compiles whether or not UsageRecord already declares the optional sessionId.
         const record = { projectId: project.id, taskId: task?.id ?? null, role, providerId: adapter.id, model: actualModel, usage: result.usage,
-          sessionId: input.sessionId ?? null };
+          sessionId: input.sessionId ?? null, runId: task?.runId ?? null };
         this.repos.usage.record(record);
       }
       const sessionRef = session ? result.sessionRef ?? null : null;

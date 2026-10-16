@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Project, Task } from '@asf/shared';
+import { STANDARD_WORKFLOW_ID, type Project, type Run, type RunStatus, type Task } from '@asf/shared';
 import { APP_ROOT } from '../src/config.ts';
 import { createStudio, type Studio } from '../src/app.ts';
+import type { Repositories } from '../src/db/repositories.ts';
+import { STANDARD_WORKFLOW_GRAPH } from '../src/workflows/standardTemplate.ts';
 
 export function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `asf-${prefix}-`));
@@ -39,6 +41,12 @@ export async function waitFor<T>(check: () => T | null | undefined | false, time
 
 export function projectOf(studio: Studio, id: string): Project {
   return studio.ctx.repos.projects.get(id)!;
+}
+
+/** A Standard-template run for tests that insert tasks directly (every task belongs to a run since Phase 4). */
+export function createRun(repos: Repositories, projectId: string, status: RunStatus = 'running'): Run {
+  return repos.runs.create({ projectId, workflowId: STANDARD_WORKFLOW_ID, workflowVersion: 1, snapshot: STANDARD_WORKFLOW_GRAPH,
+    trigger: 'manual', baseCommit: null, status });
 }
 
 export function taskByKey(studio: Studio, projectId: string, key: string): Task | undefined {
