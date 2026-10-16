@@ -1,6 +1,6 @@
 import type { TestResult } from '@asf/shared';
 import { redact } from '../security/redact.ts';
-import { runProcess } from './processRunner.ts';
+import { commandEnv, runProcess } from './processRunner.ts';
 
 /** Commands the QA agent may run without an approval. Exact argv match after whitespace split. */
 export const ALLOWED_COMMANDS: readonly string[] = [
@@ -69,7 +69,8 @@ export async function runAllowedCommand(command: string, cwd: string, options: {
   onOutput?: (chunk: string) => void }): Promise<TestResult> {
   if (!options.approved && !isAllowedCommand(command)) throw new CommandNotAllowedError(`Command is not in the allowlist: ${command}`);
   const [exe, ...args] = parseCommand(command);
-  const result = await runProcess(exe, { cwd, args, signal: options.signal, timeoutMs: options.timeoutMs, onOutput: (c) => options.onOutput?.(c) });
+  const result = await runProcess(exe, { cwd, args, env: commandEnv(), signal: options.signal, timeoutMs: options.timeoutMs,
+    onOutput: (c) => options.onOutput?.(c) });
   const output = redact(`${result.stdout}\n${result.stderr}`.trim());
   const passed = result.exitCode === 0 && !result.timedOut && !result.aborted;
   const digest = passed ? '' : failureDigest(output);

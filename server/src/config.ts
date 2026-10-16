@@ -35,11 +35,20 @@ export interface AppConfig {
   env: Record<string, string | undefined>;
 }
 
+/** Every Claude Code login store in a home folder (`.claude`, `.claude-account<N>`, `.claude.json`, …). */
+export function claudeConfigDirs(home: string): string[] {
+  try {
+    return fs.readdirSync(home).filter((name) => /^\.claude([-.].*)?$/i.test(name)).map((name) => path.join(home, name));
+  } catch {
+    return [];
+  }
+}
+
 /** Never offered for import: OS folders, other assistants' installations and their configs, and the studio itself. */
 function defaultProtectedPaths(): string[] {
   const home = os.homedir();
-  const list = [APP_ROOT, path.join(home, '.claude'), path.join(home, '.claude-account2'), path.join(home, '.claude-account3'), path.join(home, '.codex'),
-    path.join(home, '.gemini'), path.join(home, 'AppData')];
+  const claude = new Set([path.join(home, '.claude'), path.join(home, '.claude-account2'), path.join(home, '.claude-account3'), ...claudeConfigDirs(home)]);
+  const list = [APP_ROOT, ...claude, path.join(home, '.codex'), path.join(home, '.gemini'), path.join(home, 'AppData')];
   if (process.platform === 'win32') {
     list.push('C:/Windows', 'C:/Program Files', 'C:/Program Files (x86)', 'C:/ProgramData', 'D:/Jarvis', 'D:/AI-Stack');
   } else {

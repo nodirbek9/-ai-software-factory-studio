@@ -12,7 +12,7 @@ import { buildLiveSnapshot } from '../orchestrator/liveMonitor.ts';
 import { ProjectError, type ProjectService } from '../orchestrator/projectService.ts';
 import type { TaskScheduler } from '../orchestrator/scheduler.ts';
 import { ALLOWED_COMMANDS } from '../workspace/commandRunner.ts';
-import { WorkspaceError } from '../workspace/workspaceManager.ts';
+import { SensitiveFileError, WorkspaceError } from '../workspace/workspaceManager.ts';
 
 const VERSION = '0.1.0';
 const SSE_HEARTBEAT_MS = 20_000;
@@ -45,6 +45,15 @@ const settingsSchema = z.object({
 const decisionSchema = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(2000).nullable().optional() });
 const chatSchema = z.object({ message: z.string().trim().min(1).max(8000) });
 const idParam = z.object({ id: z.string().uuid() });
+
+const LOOPBACK_HOST_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** The host name of a Host header without its port ("[::1]:4317" → "[::1]", "localhost:5317" → "localhost"). */
+function hostName(header: string | undefined): string {
+  const value = (header ?? '').trim().toLowerCase();
+  if (value.startsWith('[')) return value.slice(0, value.indexOf(']') + 1);
+  return value.split(':')[0];
+}
 
 function tokenMatches(expected: string, provided: string | undefined): boolean {
   if (!provided) return false;
@@ -102,9 +111,13 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
   const { config } = ctx;
   const authRequired = Boolean(config.authToken);
 
-  // ---- security hooks: token auth (always when configured) and CSRF origin check for mutations
+  // ---- security hooks: loopback Host check, token auth (always when configured) and CSRF origin check for mutations
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.url.startsWith('/api/')) return;
+    // DNS rebinding: a page on attacker.example resolving to 127.0.0.1 sends its own name as Host (and Origin).
+    if (isLoopback(config.host) && !LOOPBACK_HOST_NAMES.has(hostName(request.headers.host))) {
+      return reply.code(403).send({ error: 'Unexpected Host header' });
+    }
     if (authRequired) {
       const header = request.headers.authorization?.replace(/^Bearer\s+/i, '');
       const query = (request.query as Record<string, string> | undefined)?.token;
@@ -124,9 +137,14 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
     }
   });
 
+  // Every API response passes the redactor once, so specs, plans, summaries and errors can never leak a known secret.
+  app.addHook('onSend', async (request: FastifyRequest, _reply: FastifyReply, payload: unknown) =>
+    (request.url.startsWith('/api/') && typeof payload === 'string' ? redact(payload) : payload));
+
   app.setErrorHandler((error: Error & { statusCode?: number; validation?: unknown }, _request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', details: error.issues });
     if (error instanceof ProjectError) return reply.code(error.statusCode).send({ error: error.message });
+    if (error instanceof SensitiveFileError) return reply.code(403).send({ error: error.message });
     if (error instanceof WorkspaceError) return reply.code(400).send({ error: error.message });
     const status = error.statusCode && error.statusCode < 500 ? error.statusCode : 500;
     if (status === 500) app.log.error(error);

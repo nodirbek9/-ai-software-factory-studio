@@ -59,10 +59,11 @@ export class TaskScheduler {
           `${task.title}: recovered from checkpoint "merged"`);
         continue;
       }
+      let kept = false;
       if (task.worktreePath && task.branch && fs.existsSync(task.worktreePath)) {
-        await savePartialWork(this.ctx, task, task.worktreePath, task.branch, partialBranchOf(this.ctx, task.id));
+        kept = !(await savePartialWork(this.ctx, task, task.worktreePath, task.branch, partialBranchOf(this.ctx, task.id)));
       }
-      if (task.worktreePath) await this.ctx.workspace.removeWorktree(project, task.worktreePath).catch(() => undefined);
+      if (task.worktreePath && !kept) await this.ctx.workspace.removeWorktree(project, task.worktreePath).catch(() => undefined);
       this.transition(task, 'ready', { checkpoint: 'none', worktreePath: null, error: 'Interrupted by a restart; re-queued from checkpoint.' },
         `${task.title}: interrupted at checkpoint "${task.checkpoint}", re-queued`, 'warn');
     }
@@ -80,7 +81,7 @@ export class TaskScheduler {
     if (this.stopped) return;
     let project = this.ctx.repos.projects.get(projectId);
     if (!project || !ACTIVE_PROJECT_STATUSES.has(project.status)) return;
-    let tasks = this.promote(this.ctx.repos.tasks.listByProject(projectId));
+    let tasks = this.demoteUnmet(this.promote(this.ctx.repos.tasks.listByProject(projectId)));
     for (const gate of tasks.filter((t) => t.kind === 'gate' && t.status === 'ready')) this.openGate(project, gate);
     tasks = this.ctx.repos.tasks.listByProject(projectId);
 
@@ -112,6 +113,15 @@ export class TaskScheduler {
       if (changed) tasks = this.ctx.repos.tasks.listByProject(initial[0]?.projectId ?? '');
     }
     return tasks;
+  }
+
+  /** Dispatch guard: a "ready" task whose dependencies are not all completed goes back to "pending" instead of running. */
+  private demoteUnmet(tasks: Task[]): Task[] {
+    const byKey = new Map(tasks.map((t) => [t.key, t]));
+    const unmet = tasks.filter((t) => t.status === 'ready' && !dependenciesMet(t, byKey));
+    if (!unmet.length) return tasks;
+    for (const task of unmet) this.transition(task, 'pending', {}, `${task.title}: waiting for its dependencies`, 'warn');
+    return this.promote(this.ctx.repos.tasks.listByProject(tasks[0].projectId));
   }
 
   private openGate(project: Project, gate: Task): void {
@@ -245,9 +255,11 @@ export class TaskScheduler {
     const task = this.ctx.repos.tasks.get(taskId);
     if (!task) throw new Error('Task not found');
     if (task.status !== 'failed' && task.status !== 'cancelled') throw new Error(`Only failed or cancelled tasks can be retried (status: ${task.status})`);
-    const retried = this.transition(task, 'ready', { maxAttempts: Math.max(task.maxAttempts, task.attempt + 1), error: null, checkpoint: 'none' },
-      `${task.title}: manual retry`);
     const all = this.ctx.repos.tasks.listByProject(task.projectId);
+    // A retried task whose dependencies are not completed waits in "pending" (promotion decides), never jumps the queue.
+    const target: TaskStatus = dependenciesMet(task, new Map(all.map((t) => [t.key, t]))) ? 'ready' : 'pending';
+    const retried = this.transition(task, target, { maxAttempts: Math.max(task.maxAttempts, task.attempt + 1), error: null, checkpoint: 'none' },
+      `${task.title}: manual retry${target === 'pending' ? ' (waits for its dependencies)' : ''}`);
     for (const dependant of dependantsOf(task.key, all).filter((t) => t.status === 'blocked')) {
       this.transition(dependant, 'pending', {}, `${dependant.title}: unblocked`);
     }

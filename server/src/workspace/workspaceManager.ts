@@ -3,7 +3,10 @@ import path from 'node:path';
 import type { DirListing, FileEntry, Project, Task } from '@asf/shared';
 import type { AppConfig } from '../config.ts';
 import { KeyedMutex } from '../orchestrator/context.ts';
+import { isSensitivePath } from '../security/sensitiveFiles.ts';
 import { commitAll, git, headCommit, isGitRepo } from './git.ts';
+
+export { isSensitivePath };
 
 export class WorkspaceError extends Error {}
 
@@ -58,6 +61,33 @@ function realpathOrSelf(p: string): string {
     return path.resolve(p);
   }
 }
+
+/**
+ * True when any existing segment of root/segments is a symlink or junction that resolves outside root (or cannot be
+ * resolved). Checking only the target or its parent misses `link/new/file` when `new` does not exist yet.
+ */
+function linkEscapes(realRoot: string, segments: string[]): boolean {
+  let current = realRoot;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(current);
+    } catch {
+      return false; // the rest of the path does not exist yet, so nothing below can be a link
+    }
+    if (!stat.isSymbolicLink()) continue;
+    try {
+      if (!isInside(fs.realpathSync.native(current), realRoot)) return true;
+    } catch {
+      return true; // dangling link: refuse rather than guess where it points
+    }
+  }
+  return false;
+}
+
+/** Refusal to read a secret-holding file (HTTP 403). */
+export class SensitiveFileError extends Error {}
 
 /** Owns every filesystem and git touch-point; nothing outside approved roots is ever read or written. */
 export class WorkspaceManager {
@@ -129,7 +159,8 @@ export class WorkspaceManager {
     const realRoot = realpathOrSelf(root);
     const full = path.join(realRoot, ...segments);
     const existingParent = realpathOrSelf(fs.existsSync(full) ? full : path.dirname(full));
-    if (!isInside(full, realRoot) || (fs.existsSync(existingParent) && !isInside(existingParent, realRoot))) {
+    if (!isInside(full, realRoot) || (fs.existsSync(existingParent) && !isInside(existingParent, realRoot))
+      || linkEscapes(realRoot, segments)) {
       throw new WorkspaceError(`Path escapes the workspace: ${relativePath}`);
     }
     return full;
@@ -169,7 +200,7 @@ export class WorkspaceManager {
     if (fs.existsSync(dir)) throw new WorkspaceError(`Workspace already exists: ${dir}`);
     fs.cpSync(source, dir, {
       recursive: true,
-      filter: (src) => !path.relative(source, src).split(path.sep).some((s) => SKIPPED_DIRS.has(s)),
+      filter: (src) => !path.relative(source, src).split(path.sep).some((s) => SKIPPED_DIRS.has(s)) && !isSensitivePath(src),
     });
     if (!fs.existsSync(path.join(dir, '.gitignore'))) fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules/\n');
     await this.initRepo(dir);
@@ -368,6 +399,7 @@ export class WorkspaceManager {
 
   readFile(root: string, relativePath: string): { content: string; truncated: boolean; binary: boolean } {
     const full = this.resolveInside(root, relativePath);
+    if (isSensitivePath(relativePath)) throw new SensitiveFileError(`${relativePath} may contain secrets, so the studio does not show it`);
     if (!fs.existsSync(full) || !fs.statSync(full).isFile()) throw new WorkspaceError(`File not found: ${relativePath}`);
     const buffer = fs.readFileSync(full);
     const slice = buffer.subarray(0, MAX_READ_BYTES);

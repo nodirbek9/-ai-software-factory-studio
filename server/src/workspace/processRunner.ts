@@ -52,6 +52,14 @@ export function childEnv(extra: Record<string, string | undefined> = {}): Record
   return { ...env, ...extra };
 }
 
+/** Environment names that usually hold credentials (FOO_API_KEY, GITHUB_TOKEN, DB_PASSWORD, …). */
+const SECRET_ENV_NAME = /(^|_)(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|ACCESS_KEY)$/i;
+
+/** Environment for project commands (tests, builds): like childEnv(), minus anything that looks like a credential. */
+export function commandEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(childEnv()).filter(([key]) => !SECRET_ENV_NAME.test(key)));
+}
+
 function killTree(pid: number): void {
   if (IS_WINDOWS) {
     spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });

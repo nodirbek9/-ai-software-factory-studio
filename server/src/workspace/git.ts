@@ -1,6 +1,14 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isSensitivePath } from '../security/sensitiveFiles.ts';
 import { childEnv, runProcess } from './processRunner.ts';
 
 export class GitError extends Error {}
+
+/** An always-empty hooks folder: repository hooks (pre-commit, post-merge, …) never run for studio git calls. */
+const NO_HOOKS_DIR = path.join(os.tmpdir(), 'asf-no-git-hooks');
+fs.mkdirSync(NO_HOOKS_DIR, { recursive: true });
 
 const GIT_ENV = childEnv({
   GIT_TERMINAL_PROMPT: '0',
@@ -26,7 +34,7 @@ export async function git(cwd: string, args: string[], allowFailure = false): Pr
   }
   const result = await runProcess('git', {
     cwd,
-    args: ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', '-c', 'core.longpaths=true', ...args],
+    args: ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', '-c', 'core.longpaths=true', '-c', `core.hooksPath=${NO_HOOKS_DIR}`, ...args],
     env: GIT_ENV,
     timeoutMs: 120_000,
   });
@@ -52,8 +60,12 @@ const NEVER_COMMIT = ['.asf-agy-task-*', '**/node_modules/**', '**/.npm-cache/**
 
 /** Stages everything and commits; returns the commit hash, or null when there was nothing to commit. */
 export async function commitAll(dir: string, message: string): Promise<string | null> {
+  // Secret-holding files (.env, keys) that are new or changed are left out; already-committed versions stay as they are.
+  const changed = await git(dir, ['ls-files', '-z', '--others', '--modified', '--exclude-standard']);
+  const secrets = [...new Set(changed.split('\0').filter((file) => file && isSensitivePath(file)))];
   // Agent scratch files and package-manager caches/installs (agents may run npm install) are never committed.
-  await git(dir, ['add', '-A', '--', '.', ...NEVER_COMMIT.map((p) => `:(exclude,glob)${p}`)]);
+  await git(dir, ['add', '-A', '--', '.', ...NEVER_COMMIT.map((p) => `:(exclude,glob)${p}`),
+    ...secrets.map((file) => `:(exclude,literal)${file}`)]);
   const staged = await git(dir, ['diff', '--cached', '--name-only']);
   if (!staged) return null;
   await git(dir, ['commit', '-q', '-m', message]);

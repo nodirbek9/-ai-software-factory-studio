@@ -89,7 +89,8 @@ export class ClaudeCodeProvider implements ProviderAdapter {
       '-p', '--output-format', 'stream-json', '--verbose', '--model', request.model || this.defaultModel,
       '--permission-mode', request.mode === 'edit' ? 'acceptEdits' : 'default',
       '--allowedTools', tools, '--disallowedTools', 'Bash,WebFetch,WebSearch',
-      '--setting-sources', 'project,local', '--no-session-persistence',
+      // No setting sources: a repository's .claude/settings*.json could define hooks that run shell commands.
+      '--setting-sources', '', '--no-session-persistence',
       ...(request.effort ? ['--effort', request.effort] : []),
       '--append-system-prompt', `${STUDIO_GUARD} Never run shell commands. ${request.systemPrompt}`.replace(/\s+/g, ' '),
     ];

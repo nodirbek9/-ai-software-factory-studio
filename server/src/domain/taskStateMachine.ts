@@ -7,7 +7,7 @@ const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   waiting_approval: ['completed', 'failed', 'cancelled'],
   failed: ['ready', 'pending'], // pending: re-queued behind a fix task
   blocked: ['pending', 'cancelled'],
-  cancelled: ['ready'],
+  cancelled: ['ready', 'pending'], // pending: a retry that still waits for its dependencies
   completed: [],
 };
 

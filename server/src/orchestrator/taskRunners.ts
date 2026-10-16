@@ -39,6 +39,8 @@ export interface RunnerArgs {
 
 const MAX_DIFF = 60_000;
 const GATE_KEY = 'plan-approval';
+/** First task of the fixed verification tail; it re-runs the project tests on the final integrated commit. */
+const FINAL_VERIFICATION_KEY = 'security-review';
 
 function timeoutMs(ctx: StudioContext): number {
   return getSettings(ctx).taskTimeoutMinutes * 60_000;
@@ -58,20 +60,24 @@ export function partialBranchOf(ctx: StudioContext, taskId: string): string | nu
 
 /**
  * Commits whatever an interrupted attempt left in its worktree (timeout, limit, crash, shutdown) to the task branch,
- * so the next attempt continues from it instead of starting over.
+ * so the next attempt continues from it instead of starting over. Returns false when saving failed: the caller must
+ * then keep the worktree, because it holds the only copy of that work.
  */
 export async function savePartialWork(ctx: StudioContext, task: Task, worktreePath: string, branch: string, resumedFrom: string | null,
-  alreadyCommitted = false): Promise<void> {
+  alreadyCommitted = false): Promise<boolean> {
   try {
     if (await git(worktreePath, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], true)) await git(worktreePath, ['merge', '--abort'], true);
     const commit = await ctx.workspace.commit(worktreePath, `wip(${task.key}): partial work from interrupted attempt ${task.attempt}`);
-    if (!commit && !resumedFrom && !alreadyCommitted) return;
+    if (!commit && !resumedFrom && !alreadyCommitted) return true;
     ctx.repos.config.setSetting(partialKey(task.id), branch);
     ctx.events.emit({ projectId: task.projectId, taskId: task.id, role: task.role, type: 'task.partial', level: 'warn',
       message: `Saved the interrupted attempt's work on ${branch}; the next attempt continues from it` });
+    return true;
   } catch (error) {
     ctx.events.emit({ projectId: task.projectId, taskId: task.id, role: task.role, type: 'task.partial', level: 'error',
-      message: `Could not save partial work: ${(error as Error).message}` });
+      message: `Could not save partial work (${(error as Error).message}); the worktree is kept at ${worktreePath} so nothing is lost`,
+      data: { worktreePath, branch } });
+    return false;
   }
 }
 
@@ -188,6 +194,7 @@ async function runInWorktree(args: RunnerArgs, buildPrompt: (editsFiles: boolean
 
 ${buildPrompt(edits)}` : buildPrompt;
   let committed = false;
+  let keepWorktree = false;
   try {
     const output = await ctx.executor.run({
       project, task, role: task.role, prompt, cwd: worktreePath, mode: 'edit', signal,
@@ -214,10 +221,12 @@ ${buildPrompt(edits)}` : buildPrompt;
       message: `Merged ${files.length} file(s) from ${branch}`, data: { files } });
     return { summary, files };
   } catch (error) {
-    if (!(error instanceof AgentOutputError) || committed) await savePartialWork(ctx, task, worktreePath, branch, resumedFrom, committed);
+    if (!(error instanceof AgentOutputError) || committed) {
+      keepWorktree = !(await savePartialWork(ctx, task, worktreePath, branch, resumedFrom, committed));
+    }
     throw error;
   } finally {
-    await ctx.workspace.removeWorktree(project, worktreePath).catch(() => undefined);
+    if (!keepWorktree) await ctx.workspace.removeWorktree(project, worktreePath).catch(() => undefined);
   }
 }
 
@@ -360,10 +369,15 @@ function latestTestSummary(ctx: StudioContext, projectId: string): string {
 
 async function runReview(args: RunnerArgs): Promise<TaskOutcome> {
   const { ctx, project, task, signal } = args;
-  // A fix made for review findings changes code after the QA test run: check the tests are still green first.
+  // The security review is the final verification barrier: whatever the PM's plan order was, the project tests run on
+  // the fully integrated code before any review can pass. A fix made for review findings also changes code after the
+  // QA test run, so a re-run after a fix checks the tests first as well.
   const command = project.testCommand;
   const approved = Boolean(command) && approvedCommands(ctx, project.id).includes(command);
-  if (isRerunAfterFix(task) && command && (approved || isAllowedCommand(command))) await runProjectTests(args, approved);
+  const runnable = Boolean(command) && (approved || isAllowedCommand(command));
+  const finalBarrier = task.key === FINAL_VERIFICATION_KEY;
+  if (finalBarrier && !runnable) throw new PermanentTaskError(`Test command "${command}" must be allowed before the final verification`);
+  if ((finalBarrier || isRerunAfterFix(task)) && runnable) await runProjectTests(args, approved);
   const root = integrationPath(project);
   let diff = await git(root, ['diff', `${project.baseCommit}..HEAD`, '--', '.', ':(exclude).asf-script.json']);
   if (diff.length > MAX_DIFF) diff = `${diff.slice(0, MAX_DIFF)}\n…(diff truncated)`;
