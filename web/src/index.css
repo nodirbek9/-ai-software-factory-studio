@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-ink-950: #0a1020;
+  --color-ink-900: #0f1729;
+  --color-ink-850: #131d33;
+  --color-ink-800: #16213a;
+  --color-ink-700: #1e2b49;
+  --color-line: #24314f;
+  --color-line-soft: #1b2742;
+  --color-text: #dce4f2;
+  --color-muted: #8391ad;
+  --color-faint: #5c6a88;
+
+  --color-brand: #6d8cff;
+  --color-brand-2: #3fd0d4;
+
+  --color-st-idle: #64748b;
+  --color-st-planning: #a78bfa;
+  --color-st-running: #5b8cff;
+  --color-st-waiting: #f5b04a;
+  --color-st-blocked: #f5b04a;
+  --color-st-completed: #34d399;
+  --color-st-failed: #f87171;
+  --color-st-cancelled: #94a3b8;
+
+  --animate-rail: rail 1.6s ease-in-out infinite;
+  @keyframes rail {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgb(109 140 255 / 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(63 208 212 / 0.06), transparent 60%),
+    var(--color-ink-950);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum' 1;
+}
+
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-700); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* React Flow dark tuning */
+.react-flow__attribution { display: none; }
+.react-flow__controls button { background: var(--color-ink-800); border-color: var(--color-line); fill: var(--color-muted); }
+.react-flow__controls button:hover { background: var(--color-ink-700); }
+
+.prose-studio h1 { font-size: 1.35rem; font-weight: 600; margin: 0.6em 0 0.4em; }
+.prose-studio h2 { font-size: 1.1rem; font-weight: 600; margin: 1.1em 0 0.4em; }
+.prose-studio h3 { font-size: 0.98rem; font-weight: 600; margin: 1em 0 0.3em; }
+.prose-studio p, .prose-studio li { color: var(--color-text); line-height: 1.6; }
+.prose-studio ul { list-style: disc; padding-left: 1.2em; }
+.prose-studio code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color-ink-800); padding: 0.1em 0.35em; border-radius: 4px; }
+.prose-studio pre { background: var(--color-ink-950); border: 1px solid var(--color-line); border-radius: 8px; padding: 10px; overflow: auto; }
+.prose-studio pre code { background: none; padding: 0; }
+.prose-studio table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin: 0.6em 0; }
+.prose-studio th, .prose-studio td { border: 1px solid var(--color-line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.prose-studio blockquote { border-left: 3px solid var(--color-st-waiting); padding-left: 10px; color: var(--color-muted); }

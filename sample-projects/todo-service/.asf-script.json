@@ -1,0 +1,96 @@
+{
+  "plan": {
+    "tasks": [
+      {
+        "key": "todo-store",
+        "title": "In-memory todo store with validation",
+        "role": "backend",
+        "dependsOn": [],
+        "description": "Create src/todoStore.js with create/list/update/remove and title validation (1-200 chars, trimmed)."
+      },
+      {
+        "key": "web-ui",
+        "title": "Static todo web UI",
+        "role": "frontend",
+        "dependsOn": [],
+        "description": "Create public/index.html and public/app.js: list, add, toggle and delete todos; escape user text."
+      },
+      {
+        "key": "http-api",
+        "title": "HTTP REST API and static hosting",
+        "role": "backend",
+        "dependsOn": [
+          "todo-store"
+        ],
+        "description": "Create src/server.js exposing /api/todos CRUD with proper status codes and serving public/."
+      },
+      {
+        "key": "api-tests",
+        "title": "Automated tests for store and API",
+        "role": "qa",
+        "dependsOn": [
+          "http-api",
+          "web-ui"
+        ],
+        "description": "Add node:test tests for the store and the HTTP API, then run npm test."
+      }
+    ]
+  },
+  "architecture": "# Implementation plan — todo-service\n\n## Overview\nZero-dependency Node.js service: an in-memory store behind a `node:http` REST API that also serves a static UI.\n\n## Modules\n| File | Responsibility |\n|---|---|\n| `src/todoStore.js` | Domain + validation, immutable copies out |\n| `src/server.js` | Routing, JSON parsing (64 KB limit), error mapping, static files |\n| `public/index.html`, `public/app.js` | UI using `fetch`, text rendered with `textContent` |\n| `test/todo.test.js` | `node:test` unit + HTTP tests on an ephemeral port |\n\n## API\n`GET/POST /api/todos`, `PATCH/DELETE /api/todos/:id`; errors are `{ \"error\": string }` with 400/404/413.\n\n## Testing\n`npm test` → `node --test`. The HTTP tests start the server on port 0.\n\n## Risks\nIn-memory data is lost on restart (accepted by the spec).\n",
+  "tasks": {
+    "todo-store": {
+      "delayMs": 2500,
+      "summary": "Added src/todoStore.js: in-memory store with title validation and not-found errors.",
+      "files": [
+        {
+          "path": "src/todoStore.js",
+          "content": "import { randomUUID } from 'node:crypto';\n\nexport class TodoError extends Error {\n  constructor(message, status) {\n    super(message);\n    this.status = status;\n  }\n}\n\nconst MAX_TITLE = 200;\n\nfunction normalizeTitle(title) {\n  if (typeof title !== 'string') throw new TodoError('title must be a string', 400);\n  const trimmed = title.trim();\n  if (!trimmed) throw new TodoError('title is required', 400);\n  if (trimmed.length > MAX_TITLE) throw new TodoError(`title must be at most ${MAX_TITLE} characters`, 400);\n  return trimmed;\n}\n\n/** In-memory todo store. Returns copies so callers cannot mutate internal state. */\nexport function createTodoStore() {\n  const todos = new Map();\n\n  const find = (id) => {\n    const todo = todos.get(id);\n    if (!todo) throw new TodoError(`todo ${id} not found`, 404);\n    return todo;\n  };\n\n  return {\n    list() {\n      return [...todos.values()].map((t) => ({ ...t }));\n    },\n    create(title) {\n      const todo = { id: randomUUID(), title: normalizeTitle(title), done: false, createdAt: new Date().toISOString() };\n      todos.set(todo.id, todo);\n      return { ...todo };\n    },\n    update(id, patch) {\n      const current = find(id);\n      const next = { ...current };\n      if (patch.title !== undefined) next.title = normalizeTitle(patch.title);\n      if (patch.done !== undefined) {\n        if (typeof patch.done !== 'boolean') throw new TodoError('done must be a boolean', 400);\n        next.done = patch.done;\n      }\n      todos.set(id, next);\n      return { ...next };\n    },\n    remove(id) {\n      find(id);\n      todos.delete(id);\n    },\n  };\n}\n"
+        }
+      ]
+    },
+    "web-ui": {
+      "delayMs": 3500,
+      "summary": "Added public/index.html and public/app.js (textContent rendering, fetch-based actions).",
+      "files": [
+        {
+          "path": "public/app.js",
+          "content": "const list = document.querySelector('#list');\nconst form = document.querySelector('#add-form');\nconst input = document.querySelector('#title');\nconst errorBox = document.querySelector('#error');\n\nasync function api(path, options = {}) {\n  const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });\n  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? response.statusText);\n  return response.status === 204 ? null : response.json();\n}\n\nfunction render(todos) {\n  list.replaceChildren(...todos.map((todo) => {\n    const item = document.createElement('li');\n    item.className = todo.done ? 'done' : '';\n    const checkbox = Object.assign(document.createElement('input'), { type: 'checkbox', checked: todo.done });\n    checkbox.addEventListener('change', () => run(() => api(`/api/todos/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ done: checkbox.checked }) })));\n    const title = document.createElement('span');\n    title.textContent = todo.title; // textContent escapes user input\n    const remove = Object.assign(document.createElement('button'), { className: 'delete', textContent: 'Delete' });\n    remove.addEventListener('click', () => run(() => api(`/api/todos/${todo.id}`, { method: 'DELETE' })));\n    item.append(checkbox, title, remove);\n    return item;\n  }));\n}\n\nasync function run(action) {\n  try {\n    errorBox.textContent = '';\n    await action();\n    render(await api('/api/todos'));\n  } catch (error) {\n    errorBox.textContent = error.message;\n  }\n}\n\nform.addEventListener('submit', (event) => {\n  event.preventDefault();\n  const title = input.value;\n  input.value = '';\n  run(() => api('/api/todos', { method: 'POST', body: JSON.stringify({ title }) }));\n});\n\nrun(async () => {});\n"
+        },
+        {
+          "path": "public/index.html",
+          "content": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Todos</title>\n  <style>\n    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: grid; place-items: start center; padding: 48px 16px; }\n    main { width: min(520px, 100%); }\n    form { display: flex; gap: 8px; margin-bottom: 16px; }\n    input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: inherit; }\n    button { padding: 10px 14px; border-radius: 8px; border: 0; background: #6366f1; color: white; cursor: pointer; }\n    li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e293b; list-style: none; }\n    li.done span { text-decoration: line-through; opacity: .6; }\n    li span { flex: 1; }\n    .delete { background: transparent; color: #f87171; }\n  </style>\n</head>\n<body>\n  <main>\n    <h1>Todos</h1>\n    <form id=\"add-form\">\n      <input id=\"title\" maxlength=\"200\" placeholder=\"What needs to be done?\" required />\n      <button type=\"submit\">Add</button>\n    </form>\n    <p id=\"error\" role=\"alert\"></p>\n    <ul id=\"list\"></ul>\n  </main>\n  <script type=\"module\" src=\"/app.js\"></script>\n</body>\n</html>\n"
+        }
+      ]
+    },
+    "http-api": {
+      "delayMs": 2000,
+      "failAttempts": 1,
+      "summary": "Added src/server.js with CRUD routes, body limit, error mapping and static hosting.",
+      "files": [
+        {
+          "path": "src/server.js",
+          "content": "import { createServer } from 'node:http';\nimport { readFile } from 'node:fs/promises';\nimport { extname, join, normalize } from 'node:path';\nimport { fileURLToPath } from 'node:url';\nimport { createTodoStore, TodoError } from './todoStore.js';\n\nconst PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));\nconst MAX_BODY = 64 * 1024;\nconst TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };\n\nfunction send(res, status, body) {\n  if (body === undefined) {\n    res.writeHead(status).end();\n    return;\n  }\n  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(body));\n}\n\nasync function readJson(req) {\n  let size = 0;\n  const chunks = [];\n  for await (const chunk of req) {\n    size += chunk.length;\n    if (size > MAX_BODY) throw new TodoError('request body too large', 413);\n    chunks.push(chunk);\n  }\n  try {\n    return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};\n  } catch {\n    throw new TodoError('invalid JSON body', 400);\n  }\n}\n\nasync function serveStatic(res, pathname) {\n  const relative = normalize(pathname === '/' ? 'index.html' : pathname.slice(1));\n  if (relative.startsWith('..')) return send(res, 404, { error: 'not found' });\n  try {\n    const content = await readFile(join(PUBLIC_DIR, relative));\n    res.writeHead(200, { 'Content-Type': TYPES[extname(relative)] ?? 'application/octet-stream' }).end(content);\n  } catch {\n    send(res, 404, { error: 'not found' });\n  }\n}\n\nexport function createApp(store = createTodoStore()) {\n  return createServer(async (req, res) => {\n    const { pathname } = new URL(req.url, 'http://localhost');\n    try {\n      if (pathname === '/api/todos' && req.method === 'GET') return send(res, 200, store.list());\n      if (pathname === '/api/todos' && req.method === 'POST') return send(res, 201, store.create((await readJson(req)).title));\n      const match = /^\\/api\\/todos\\/([\\w-]+)$/.exec(pathname);\n      if (match && req.method === 'PATCH') return send(res, 200, store.update(match[1], await readJson(req)));\n      if (match && req.method === 'DELETE') {\n        store.remove(match[1]);\n        return send(res, 204);\n      }\n      if (pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });\n      if (req.method === 'GET') return serveStatic(res, pathname);\n      return send(res, 405, { error: 'method not allowed' });\n    } catch (error) {\n      if (error instanceof TodoError) return send(res, error.status, { error: error.message });\n      return send(res, 500, { error: 'internal error' });\n    }\n  });\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {\n  const port = Number(process.env.PORT ?? 3000);\n  createApp().listen(port, '127.0.0.1', () => console.log(`todo-service on http://127.0.0.1:${port}`));\n}\n"
+        }
+      ]
+    },
+    "api-tests": {
+      "delayMs": 1500,
+      "summary": "Added test/todo.test.js covering the store and the HTTP API lifecycle.",
+      "files": [
+        {
+          "path": "test/todo.test.js",
+          "content": "import { test, describe, before, after } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { createTodoStore } from '../src/todoStore.js';\nimport { createApp } from '../src/server.js';\n\ndescribe('todo store', () => {\n  test('creates, updates and removes todos', () => {\n    const store = createTodoStore();\n    const todo = store.create('  write tests  ');\n    assert.equal(todo.title, 'write tests');\n    assert.equal(todo.done, false);\n    assert.equal(store.update(todo.id, { done: true }).done, true);\n    store.remove(todo.id);\n    assert.deepEqual(store.list(), []);\n  });\n\n  test('rejects invalid titles', () => {\n    const store = createTodoStore();\n    assert.throws(() => store.create('   '), /title is required/);\n    assert.throws(() => store.create('x'.repeat(201)), /at most 200/);\n  });\n\n  test('reports unknown ids as not found', () => {\n    assert.throws(() => createTodoStore().remove('missing'), (error) => error.status === 404);\n  });\n});\n\ndescribe('HTTP API', () => {\n  let server;\n  let base;\n\n  before(async () => {\n    server = createApp();\n    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));\n    base = `http://127.0.0.1:${server.address().port}`;\n  });\n\n  after(() => new Promise((resolve) => server.close(resolve)));\n\n  test('full todo lifecycle', async () => {\n    const created = await fetch(`${base}/api/todos`, { method: 'POST', body: JSON.stringify({ title: 'ship it' }) });\n    assert.equal(created.status, 201);\n    const todo = await created.json();\n\n    const patched = await fetch(`${base}/api/todos/${todo.id}`, { method: 'PATCH', body: JSON.stringify({ done: true }) });\n    assert.equal((await patched.json()).done, true);\n\n    const list = await (await fetch(`${base}/api/todos`)).json();\n    assert.equal(list.length, 1);\n\n    assert.equal((await fetch(`${base}/api/todos/${todo.id}`, { method: 'DELETE' })).status, 204);\n    assert.equal((await fetch(`${base}/api/todos/${todo.id}`, { method: 'DELETE' })).status, 404);\n  });\n\n  test('validates input', async () => {\n    const response = await fetch(`${base}/api/todos`, { method: 'POST', body: JSON.stringify({ title: '' }) });\n    assert.equal(response.status, 400);\n    const bad = await fetch(`${base}/api/todos`, { method: 'POST', body: '{not json' });\n    assert.equal(bad.status, 400);\n  });\n\n  test('serves the web UI', async () => {\n    const response = await fetch(`${base}/`);\n    assert.equal(response.status, 200);\n    assert.match(await response.text(), /<h1>Todos<\\/h1>/);\n  });\n});\n"
+        }
+      ]
+    },
+    "security-review": {
+      "delayMs": 1500,
+      "text": "## Security review\n\n- Request bodies are capped at 64 KB (`src/server.js`) — OK.\n- Static file serving normalises the path and rejects `..` — OK.\n- UI renders titles with `textContent`, no HTML injection — OK.\n- LOW: no rate limiting; acceptable for a local sample.\n\nVERDICT: PASS"
+    },
+    "final-review": {
+      "delayMs": 1500,
+      "text": "## Final review\n\n- Store returns copies and validates input consistently.\n- API maps domain errors to 400/404/413 and has a JSON 404 for unknown API routes.\n- Tests cover the store, the full HTTP lifecycle, validation and static hosting.\n\nVERDICT: PASS"
+    }
+  },
+  "chat": "I am the offline scripted provider (not an AI). Assign Claude Code, Codex, Gemini or an OpenAI-compatible provider to this agent for real answers."
+}

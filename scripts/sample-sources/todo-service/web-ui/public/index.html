@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Todos</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: grid; place-items: start center; padding: 48px 16px; }
+    main { width: min(520px, 100%); }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: inherit; }
+    button { padding: 10px 14px; border-radius: 8px; border: 0; background: #6366f1; color: white; cursor: pointer; }
+    li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e293b; list-style: none; }
+    li.done span { text-decoration: line-through; opacity: .6; }
+    li span { flex: 1; }
+    .delete { background: transparent; color: #f87171; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Todos</h1>
+    <form id="add-form">
+      <input id="title" maxlength="200" placeholder="What needs to be done?" required />
+      <button type="submit">Add</button>
+    </form>
+    <p id="error" role="alert"></p>
+    <ul id="list"></ul>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
