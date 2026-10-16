@@ -17,6 +17,7 @@ const Models = page(() => import('@/pages/Models'), 'Models');
 const RightPanel = page(() => import('@/components/layout/RightPanel'), 'RightPanel');
 
 const PAGES: Record<View, LazyExoticComponent<ComponentType>> = {
+  home: page(() => import('@/pages/Home'), 'Home'),
   dashboard: page(() => import('@/pages/Dashboard'), 'Dashboard'),
   monitor: page(() => import('@/pages/Monitor'), 'Monitor'),
   projects: page(() => import('@/pages/Projects'), 'Projects'),

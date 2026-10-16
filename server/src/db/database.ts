@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const MIGRATIONS: string[] = [
@@ -123,6 +125,7 @@ export function openDatabase(file: string): Db {
   const row = db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined;
   let version = row?.version ?? 0;
   if (!row) db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
+  if (version > 0 && version < MIGRATIONS.length) backupBeforeMigrating(db, file);
   while (version < MIGRATIONS.length) {
     transaction(db, () => {
       db.exec(MIGRATIONS[version]);
@@ -131,6 +134,14 @@ export function openDatabase(file: string): Db {
     version += 1;
   }
   return db;
+}
+
+/** A consistent copy of an existing database before its schema is upgraded (D-018); kept once per target version. */
+function backupBeforeMigrating(db: Db, file: string): void {
+  const target = path.join(path.dirname(file), 'backups', `studio-before-v${MIGRATIONS.length}.db`);
+  if (fs.existsSync(target)) return;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
 }
 
 export function transaction<T>(db: Db, work: () => T): T {

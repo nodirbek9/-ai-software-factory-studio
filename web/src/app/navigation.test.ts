@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_ITEMS } from './navigation';
+import { NAV_ITEMS, isActive } from './navigation';
 import { VIEWS, hashForView, viewFromHash, type View } from '@/store/studio';
 
 describe('navigation model', () => {
@@ -8,6 +8,14 @@ describe('navigation model', () => {
     expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(NAV_ITEMS.length);
     expect(new Set(NAV_ITEMS.map((item) => item.label)).size).toBe(NAV_ITEMS.length);
     for (const item of NAV_ITEMS) expect(item.label.trim()).not.toBe('');
+  });
+
+  it('opens the Home page from Home and keeps the Project board highlighted under it', () => {
+    const home = NAV_ITEMS.find((item) => item.id === 'home')!;
+    expect(home.view).toBe('home');
+    expect(isActive(home, 'home')).toBe(true);
+    expect(isActive(home, 'dashboard')).toBe(true);
+    expect(isActive(home, 'monitor')).toBe(false);
   });
 
   it('explains every planned item with the phase that delivers it', () => {
@@ -33,15 +41,20 @@ describe('hash routing', () => {
   });
 
   it.each<[string, View]>([
-    ['#/home', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'workflows'],
+    ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'workflows'],
     ['#/repos', 'files'], ['#/models', 'models'],
   ])('resolves the V2 slug %s', (hash, view) => {
     expect(viewFromHash(hash)).toBe(view);
   });
 
-  it('falls back to the dashboard for unknown or empty hashes', () => {
-    expect(viewFromHash('')).toBe('dashboard');
-    expect(viewFromHash('#')).toBe('dashboard');
-    expect(viewFromHash('#/nope')).toBe('dashboard');
+  it('writes #/board for the Project board and #/home for Home', () => {
+    expect(hashForView('dashboard')).toBe('#/board');
+    expect(hashForView('home')).toBe('#/home');
+  });
+
+  it('falls back to Home for unknown or empty hashes', () => {
+    expect(viewFromHash('')).toBe('home');
+    expect(viewFromHash('#')).toBe('home');
+    expect(viewFromHash('#/nope')).toBe('home');
   });
 });

@@ -90,7 +90,7 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it('switches project and opens Home', async () => {
+  it('switches project and opens the Project board', async () => {
     const orion = project('p2', 'Orion');
     seedProjects('draft');
     const network = installFetchMock({ 'GET /api/projects/p2': snapshotOf(orion) });
@@ -100,7 +100,8 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(useStudio.getState().currentProjectId).toBe('p2');
-    expect(window.location.hash).toBe('#/home');
+    expect(useStudio.getState().view).toBe('dashboard');
+    expect(window.location.hash).toBe('#/board');
     await waitFor(() => expect(useStudio.getState().snapshot?.project.id).toBe('p2'));
     expect(network.calls).toContainEqual({ method: 'GET', path: '/api/projects/p2', body: undefined });
   });

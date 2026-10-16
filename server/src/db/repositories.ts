@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AgentConfig, AgentMessage, AgentRole, Approval, ApprovalKind, ApprovalStatus, CheckpointStage, EventLevel,
-  Project, ProjectStatus, StudioEvent, Task, TaskKind, TaskStatus, TestResult, UsageInfo,
+  EventsPage, Project, ProjectStatus, StudioEvent, Task, TaskKind, TaskStatus, TestResult, UsageInfo,
 } from '@asf/shared';
 import type { Db } from './database.ts';
 import { redact } from '../security/redact.ts';
@@ -198,6 +198,21 @@ export class EventRepository {
     return order === 'DESC' ? events.reverse() : events;
   }
 
+  /** Newest first; `before` returns ids < before. nextBefore is the smallest returned id while older rows exist. */
+  page(filter: { projectId?: string; before?: number; limit: number; level?: EventLevel; type?: string }): EventsPage {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (filter.projectId) { where.push('project_id = ?'); params.push(filter.projectId); }
+    if (filter.before !== undefined) { where.push('id < ?'); params.push(filter.before); }
+    if (filter.level) { where.push('level = ?'); params.push(filter.level); }
+    if (filter.type) { where.push('type = ?'); params.push(filter.type); }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const limit = Math.min(Math.max(Math.trunc(filter.limit) || 1, 1), 500);
+    const rows = this.db.prepare(`SELECT * FROM events ${clause} ORDER BY id DESC LIMIT ?`).all(...params, limit + 1) as Row[];
+    const events = rows.slice(0, limit).map(toEvent);
+    return { events, nextBefore: rows.length > limit ? events[events.length - 1].id : null };
+  }
+
   latestForTask(taskId: string, type: string): StudioEvent | null {
     const row = this.db.prepare('SELECT * FROM events WHERE task_id = ? AND type = ? ORDER BY id DESC LIMIT 1').get(taskId, type) as Row | undefined;
     return row ? toEvent(row) : null;
@@ -318,6 +333,26 @@ export class ConfigRepository {
     this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
       .run(key, JSON.stringify(value));
   }
+
+  /** Health check: true when the database answers a trivial query. */
+  ping(): boolean {
+    const r = this.db.prepare('SELECT 1 AS ok').get() as { ok: number } | undefined;
+    return Number(r?.ok) === 1;
+  }
+}
+
+export interface UsageWindowRow {
+  providerId: string; model: string | null; calls: number; inputTokens: number; outputTokens: number;
+  /** SUM(cost_usd): null when no record reported a cost. */
+  costUsd: number | null;
+  /** COUNT(cost_usd): records that reported a cost. */
+  costRows: number;
+}
+
+/** YYYY-MM-DD of an instant in the server's local time zone. */
+export function localDate(at: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 }
 
 export interface UsageRecord {
@@ -364,6 +399,39 @@ export class UsageRepository {
       providerId: String(r.provider_id), model: str(r.model), calls: Number(r.n), inputTokens: Number(r.i),
       outputTokens: Number(r.o), costUsd: Number(r.c),
     }));
+  }
+
+  /** Usage per provider + model with from <= created_at <= to (ISO UTC strings compare chronologically). */
+  window(fromIso: string, toIso: string): UsageWindowRow[] {
+    return (this.db.prepare(`SELECT provider_id, model, COUNT(*) AS n, COALESCE(SUM(input_tokens), 0) AS i,
+      COALESCE(SUM(output_tokens), 0) AS o, SUM(cost_usd) AS c, COUNT(cost_usd) AS cn FROM usage_records
+      WHERE created_at >= ? AND created_at <= ? GROUP BY provider_id, model`).all(fromIso, toIso) as Row[]).map((r) => ({
+      providerId: String(r.provider_id), model: str(r.model), calls: Number(r.n), inputTokens: Number(r.i),
+      outputTokens: Number(r.o), costUsd: r.c === null ? null : Number(r.c), costRows: Number(r.cn),
+    }));
+  }
+
+  /** Input + output tokens with from <= created_at < to (an earlier window that ends where the next one starts). */
+  tokensBetween(fromIso: string, toIso: string): number {
+    const r = this.db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS t FROM usage_records
+      WHERE created_at >= ? AND created_at < ?`).get(fromIso, toIso) as { t: number };
+    return Number(r.t);
+  }
+
+  /**
+   * Tokens per server-local day with from <= created_at <= to, oldest first; days without usage are omitted.
+   * created_at is ISO UTC, so SQL groups by UTC minute (every real time-zone offset is a whole number of minutes)
+   * and each minute is assigned to its local day here — exact, and at most 1440 rows per day.
+   */
+  byDay(fromIso: string, toIso: string): { date: string; totalTokens: number }[] {
+    const rows = this.db.prepare(`SELECT substr(created_at, 1, 16) AS m, SUM(input_tokens + output_tokens) AS t FROM usage_records
+      WHERE created_at >= ? AND created_at <= ? GROUP BY m ORDER BY m`).all(fromIso, toIso) as Row[];
+    const days = new Map<string, number>();
+    for (const r of rows) {
+      const date = localDate(new Date(`${String(r.m)}:00.000Z`));
+      days.set(date, (days.get(date) ?? 0) + Number(r.t));
+    }
+    return [...days].map(([date, totalTokens]) => ({ date, totalTokens }));
   }
 }
 

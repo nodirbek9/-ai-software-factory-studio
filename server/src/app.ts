@@ -46,7 +46,8 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
   const scheduler = new TaskScheduler(ctx, db);
   const projects = new ProjectService(ctx, scheduler, db);
 
-  const app = Fastify({ logger: options.logger ? { level: 'info' } : false, disableRequestLogging: true, bodyLimit: 2 * 1024 * 1024 });
+  const app = Fastify({ logger: options.logger ? { level: 'info' } : false, bodyLimit: 2 * 1024 * 1024,
+    logController: new Fastify.LogController({ disableRequestLogging: true }) });
   // wildcard: true resolves files per request, so a rebuilt dashboard is served without a restart.
   if (fs.existsSync(config.webDistDir)) await app.register(fastifyStatic, { root: config.webDistDir, wildcard: true });
   registerRoutes(app, { ctx, projects, scheduler });

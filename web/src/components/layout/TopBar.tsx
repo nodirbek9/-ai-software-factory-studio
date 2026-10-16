@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, Download, Layers, Pause, Play, Search, Sparkles, Square } from 'lucide-react';
 import { getToken } from '@/lib/api';
 import { cn, statusMeta, timeAgo } from '@/lib/utils';
@@ -14,6 +14,22 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
   );
 }
 
+const SEEN_KEY = 'asf.notifications.seen';
+
+/** Highest event id the person has already looked at (survives reloads; 0 when storage is unavailable). */
+function readSeen(): number {
+  try {
+    const value = Number(localStorage.getItem(SEEN_KEY));
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeen(id: number): void {
+  try { localStorage.setItem(SEEN_KEY, String(id)); } catch { /* storage unavailable — the badge resets on reload */ }
+}
+
 async function downloadReport(projectId: string, slug: string): Promise<void> {
   const token = getToken();
   const response = await fetch(`/api/projects/${projectId}/report.md`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -27,6 +43,7 @@ async function downloadReport(projectId: string, slug: string): Promise<void> {
 export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { live: liveState, projects, currentProjectId, selectProject, snapshot, events, startPlanning, pause, resume, cancelProject, setView, setError } = useStudio();
   const [bellOpen, setBellOpen] = useState(false);
+  const [seen, setSeen] = useState(readSeen);
   const project = snapshot?.project;
   const tasks = snapshot?.tasks ?? [];
   const done = tasks.filter((t) => t.status === 'completed').length;
@@ -38,6 +55,14 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
     const alerts = events.filter((e) => e.projectId === currentProjectId && (e.level === 'error' || e.level === 'warn') && e.type !== 'agent.output');
     return alerts.slice(-12).reverse();
   }, [events, currentProjectId]);
+
+  const unseen = notifications.filter((e) => e.id > seen).length;
+  // While the dropdown is open everything that arrives is on screen, so it counts as seen.
+  useEffect(() => {
+    if (!bellOpen) return;
+    const latest = events.at(-1)?.id ?? 0;
+    if (latest > seen) { setSeen(latest); writeSeen(latest); }
+  }, [bellOpen, events, seen]);
 
   const status = project?.status;
   const live = status === 'planning' || status === 'running' || status === 'awaiting_approval';
@@ -81,10 +106,10 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           {liveState?.running.length ? `${liveState.running.length} agent${liveState.running.length > 1 ? 's' : ''} working` : 'No agent working'}
         </button>
         <div className="relative">
-          <Button variant="ghost" size="icon" onClick={() => setBellOpen((v) => !v)} aria-label="Notifications">
+          <Button variant="ghost" size="icon" onClick={() => setBellOpen((open) => !open)} aria-label="Notifications">
             <Bell size={17} />
-            {(pending.length > 0 || notifications.length > 0) && (
-              <span className={cn('absolute right-1.5 top-1.5 h-2 w-2 rounded-full', pending.length ? 'bg-st-waiting' : 'bg-st-failed')} />
+            {(pending.length > 0 || unseen > 0) && (
+              <span data-testid="notification-dot" className={cn('absolute right-1.5 top-1.5 h-2 w-2 rounded-full', pending.length ? 'bg-st-waiting' : 'bg-st-failed')} />
             )}
           </Button>
           {bellOpen && (

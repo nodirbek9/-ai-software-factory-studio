@@ -209,6 +209,8 @@ export interface ServerInfo {
   dataDir: string;
   allowedCommands: string[];
   settings: StudioSettings;
+  /** Windows/OS account name of the person running the studio (Home greeting). */
+  userName: string;
 }
 
 export interface ProjectSnapshot {
@@ -336,4 +338,115 @@ export interface FileEntry {
 export interface ApiError {
   error: string;
   details?: unknown;
+}
+
+// ------------------------------------------------------------------ V2 read models (/api/v2/*, Phase 2)
+
+/** One pipeline stage of the current project on Home (tasks grouped by role). */
+export interface OverviewStage {
+  role: AgentRole;
+  /** 'none' = the project has no task for this role. */
+  status: 'none' | 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'blocked';
+  tasksTotal: number;
+  tasksCompleted: number;
+  /** Running task, else the first unfinished one, else the last one. */
+  currentTask: { id: string; title: string; status: TaskStatus } | null;
+  providerId: string | null;
+  model: string | null;
+  /** Sum of finished attempts' wall time plus the running task's elapsed time, in ms. */
+  durationMs: number;
+  /** Files changed by the latest completed task of this stage. */
+  latestFiles: string[];
+  /** Error of the latest failed task of this stage. */
+  error: string | null;
+}
+
+export interface OverviewAgentHealth {
+  role: AgentRole;
+  /** disconnected = the assigned provider is disabled or not available. */
+  status: 'running' | 'idle' | 'failed' | 'blocked' | 'disconnected';
+  currentTask: { id: string; title: string; projectName: string } | null;
+  lastActivityAt: string | null;
+  providerId: string;
+  providerLabel: string | null;
+  model: string;
+  effort: EffortLevel;
+  /** Completed / (completed + failed) tasks of this role finished in the last 7 days; null when none finished. */
+  successRate7d: number | null;
+  finished7d: number;
+}
+
+export interface OverviewProject {
+  id: string;
+  name: string;
+  description: string;
+  status: ProjectStatus;
+  workspacePath: string;
+  integrationBranch: string | null;
+  updatedAt: string;
+  tasksTotal: number;
+  tasksCompleted: number;
+  activeAgents: number;
+  failedTasks: number;
+}
+
+export interface OverviewResponse {
+  generatedAt: string;
+  projects: { total: number; active: number; createdLast7d: number };
+  agents: { running: number; slots: number; queued: number };
+  tasks: { open: number; failedLast24h: number; completedLast24h: number };
+  approvals: { pending: number };
+  /** Only when ?projectId= names an existing project. */
+  currentProject: null | {
+    id: string; name: string; status: ProjectStatus;
+    stages: OverviewStage[];
+    progress: { total: number; completed: number; running: number; blocked: number; failed: number };
+  };
+  agentHealth: OverviewAgentHealth[];
+  /** Most recently updated first, at most 6. */
+  activeProjects: OverviewProject[];
+  /** Same shape as the live monitor, at most 8. */
+  recentRuns: LiveFinished[];
+}
+
+export interface UsageModelRow {
+  providerId: string;
+  providerLabel: string | null;
+  model: string | null;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Sum of reported costs; null when no record of this row reported a cost. */
+  costUsd: number | null;
+}
+
+export interface UsageSummary {
+  range: '24h' | '7d';
+  from: string;
+  to: string;
+  totalTokens: number;
+  /** Same-length window right before `from`, for the delta on Home. */
+  previousTotalTokens: number;
+  calls: number;
+  costUsd: number | null;
+  byModel: UsageModelRow[];
+  /** One entry per local day in the range (7 for 7d, 1–2 for 24h), oldest first. */
+  byDay: { date: string; totalTokens: number }[];
+}
+
+export type HealthState = 'ok' | 'degraded' | 'down';
+
+export interface SystemHealth {
+  generatedAt: string;
+  overall: HealthState;
+  checks: { id: 'api' | 'database' | 'events' | 'providers' | 'git' | 'disk'; label: string; state: HealthState; detail: string }[];
+  server: { rssBytes: number; uptimeSec: number; version: string };
+  system: { totalMemBytes: number; freeMemBytes: number; cpuPercent: number | null };
+  eventClients: number;
+}
+
+export interface EventsPage {
+  events: StudioEvent[];
+  /** Pass as ?before= to load the next (older) page; null when there is no older event. */
+  nextBefore: number | null;
 }

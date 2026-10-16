@@ -1,12 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NAV_ITEMS } from '@/app/navigation';
 import { useStudio } from '@/store/studio';
-import { provider } from '@/test/fixtures';
+import { installFetchMock } from '@/test/fetchMock';
+import { healthFixture, provider } from '@/test/fixtures';
 import { Sidebar } from './Sidebar';
 
 beforeEach(() => {
   useStudio.setState(useStudio.getInitialState(), true);
+  // Without a health route the request fails, which exercises the connection-based fallback rows.
+  installFetchMock({});
 });
 
 describe('Sidebar', () => {
@@ -50,6 +53,30 @@ describe('Sidebar', () => {
     expect(screen.getByText('Connected')).toBeTruthy();
     expect(screen.getByText('1 of 2 usable')).toBeTruthy();
     expect(screen.getByText('Partly degraded')).toBeTruthy();
+  });
+
+  it('shows the server health checks once /api/v2/system/health loads', async () => {
+    const network = installFetchMock({ 'GET /api/v2/system/health': healthFixture() });
+    useStudio.setState({ connection: 'live', providers: [provider()] });
+    render(<Sidebar />);
+    expect(screen.getByText('Connected')).toBeTruthy();
+    const status = screen.getByRole('region', { name: 'System status' });
+    expect(await within(status).findByText('Schema v7')).toBeTruthy();
+    for (const text of ['Database', 'Event stream', 'Git', '1 of 2 available', '120 GB free', 'Partly degraded']) {
+      expect(within(status).getByText(text)).toBeTruthy();
+    }
+    expect(within(status).queryByText('Connected')).toBeNull();
+    expect(network.calls).toContainEqual({ method: 'GET', path: '/api/v2/system/health', body: undefined });
+  });
+
+  it('opens Home from the Home item and keeps it highlighted on the Project board', () => {
+    useStudio.setState({ view: 'dashboard' });
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: 'Logs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+    expect(useStudio.getState().view).toBe('home');
+    expect(window.location.hash).toBe('#/home');
   });
 
   it('collapses and expands', () => {

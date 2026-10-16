@@ -45,6 +45,11 @@ export class EventStream {
     return () => this.listeners.delete(listener);
   }
 
+  /** Number of live subscribers (SSE clients). */
+  get clientCount(): number {
+    return this.listeners.size;
+  }
+
   replay(afterId: number, projectId?: string): StudioEvent[] {
     return this.repo.list({ afterId, projectId, limit: 1000 });
   }

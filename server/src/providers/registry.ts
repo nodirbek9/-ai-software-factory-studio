@@ -102,19 +102,33 @@ export class ProviderRegistry {
   }
 
   async list(force = false): Promise<ProviderInfo[]> {
+    return Promise.all([...this.adapters.values()].map(async (adapter) => this.info(adapter, await this.detect(adapter.id, force))));
+  }
+
+  /**
+   * For status read models (Home, system health): detects only enabled providers (cached, same TTL as list());
+   * a disabled provider reports its last cached detection, or unavailable when it was never checked.
+   */
+  async statusList(): Promise<ProviderInfo[]> {
     return Promise.all([...this.adapters.values()].map(async (adapter) => {
-      const detection = await this.detect(adapter.id, force);
-      const cfg = this.config.getProviderConfig(adapter.id)!;
-      const customModels = (cfg.settings.models ?? '').split(',').map((m) => m.trim()).filter(Boolean);
-      return {
-        id: adapter.id, label: adapter.label, kind: adapter.kind, editsFiles: adapter.editsFiles, isAi: adapter.isAi,
-        enabled: cfg.enabled, available: detection.available, version: detection.version, reason: detection.reason,
-        models: customModels.length ? customModels : detection.models ?? adapter.models, defaultModel: adapter.defaultModel,
-        budgetUsd: cfg.budgetUsd, spentUsd: this.usage.spentByProvider(adapter.id),
-        limitedUntil: this.limitedUntil(adapter.id)?.toISOString() ?? null,
-        settings: Object.fromEntries(Object.entries(cfg.settings).filter(([k]) => NON_SECRET_SETTINGS.has(k))),
-      };
+      const enabled = this.config.getProviderConfig(adapter.id)?.enabled ?? false;
+      const detection = enabled ? await this.detect(adapter.id)
+        : this.detections.get(adapter.id)?.value ?? { available: false, version: null, reason: 'Disabled (not checked)' };
+      return this.info(adapter, detection);
     }));
+  }
+
+  private info(adapter: ProviderAdapter, detection: ProviderDetection): ProviderInfo {
+    const cfg = this.config.getProviderConfig(adapter.id)!;
+    const customModels = (cfg.settings.models ?? '').split(',').map((m) => m.trim()).filter(Boolean);
+    return {
+      id: adapter.id, label: adapter.label, kind: adapter.kind, editsFiles: adapter.editsFiles, isAi: adapter.isAi,
+      enabled: cfg.enabled, available: detection.available, version: detection.version, reason: detection.reason,
+      models: customModels.length ? customModels : detection.models ?? adapter.models, defaultModel: adapter.defaultModel,
+      budgetUsd: cfg.budgetUsd, spentUsd: this.usage.spentByProvider(adapter.id),
+      limitedUntil: this.limitedUntil(adapter.id)?.toISOString() ?? null,
+      settings: Object.fromEntries(Object.entries(cfg.settings).filter(([k]) => NON_SECRET_SETTINGS.has(k))),
+    };
   }
 
   updateProvider(id: string, patch: { enabled?: boolean; budgetUsd?: number | null; settings?: Record<string, string> }): void {

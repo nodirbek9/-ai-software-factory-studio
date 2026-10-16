@@ -15,7 +15,7 @@ export interface NavItem {
 
 /** The 11 V2 destinations (docs/v2/phases/PHASE_1.md). Order matches the reference design. */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { id: 'home', label: 'Home', icon: Home, view: 'dashboard' },
+  { id: 'home', label: 'Home', icon: Home, view: 'home', alsoActiveFor: ['dashboard'] },
   { id: 'projects', label: 'Projects', icon: FolderGit2, view: 'projects' },
   { id: 'workspace', label: 'Agent Workspace', icon: Bot, view: null,
     plannedReason: 'Multi-panel agent sessions arrive in Phase 3. Until then, chat with an agent from its card on Home.' },

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -13,8 +14,9 @@ import { ProjectError, type ProjectService } from '../orchestrator/projectServic
 import type { TaskScheduler } from '../orchestrator/scheduler.ts';
 import { ALLOWED_COMMANDS } from '../workspace/commandRunner.ts';
 import { SensitiveFileError, WorkspaceError } from '../workspace/workspaceManager.ts';
+import { STUDIO_VERSION as VERSION } from '../version.ts';
+import { registerV2Routes } from './v2Routes.ts';
 
-const VERSION = '0.1.0';
 const SSE_HEARTBEAT_MS = 20_000;
 
 const createProjectSchema = z.object({
@@ -45,6 +47,14 @@ const settingsSchema = z.object({
 const decisionSchema = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(2000).nullable().optional() });
 const chatSchema = z.object({ message: z.string().trim().min(1).max(8000) });
 const idParam = z.object({ id: z.string().uuid() });
+
+function osUserName(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
+  }
+}
 
 const LOOPBACK_HOST_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -154,7 +164,7 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
   // ---- server info & settings
   app.get('/api/info', async (): Promise<ServerInfo> => ({
     version: VERSION, host: config.host, port: config.port, authRequired, approvedRoots: ctx.workspace.approvedRoots,
-    dataDir: config.dataDir, allowedCommands: [...ALLOWED_COMMANDS], settings: getSettings(ctx),
+    dataDir: config.dataDir, allowedCommands: [...ALLOWED_COMMANDS], settings: getSettings(ctx), userName: osUserName(),
   }));
   app.put('/api/settings', async (request) => {
     const patch = settingsSchema.parse(request.body);
@@ -287,6 +297,9 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
     const heartbeat = setInterval(() => res.write(': ping\n\n'), SSE_HEARTBEAT_MS);
     request.raw.on('close', () => { clearInterval(heartbeat); unsubscribe(); });
   });
+
+  // ---- V2 read models (/api/v2/*)
+  registerV2Routes(app, { ctx });
 
   // ---- built dashboard (production mode)
   if (fs.existsSync(config.webDistDir)) {

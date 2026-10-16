@@ -1,4 +1,6 @@
+import type { SystemHealth } from '@asf/shared';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useV2 } from '@/features/home/useV2';
 import { isActive, NAV_ITEMS, type NavItem } from '@/app/navigation';
 import { cn } from '@/lib/utils';
 import { useStudio } from '@/store/studio';
@@ -6,21 +8,27 @@ import { useStudio } from '@/store/studio';
 type Health = 'ok' | 'degraded' | 'down';
 const HEALTH_DOT: Record<Health, string> = { ok: 'bg-st-completed', degraded: 'bg-st-waiting', down: 'bg-st-failed' };
 
-/** Real status rows only: the live connection, provider availability and running agents (no constant percentages). */
+/**
+ * Real status rows only (no constant percentages): the server's own checks from /api/v2/system/health, and, while
+ * those load or the request fails, the live connection, provider availability and running agents known to the client.
+ */
 function SystemStatus({ collapsed }: { collapsed: boolean }) {
   const connection = useStudio((s) => s.connection);
   const providers = useStudio((s) => s.providers);
   const working = useStudio((s) => s.live?.running.length ?? 0);
+  const { data: health } = useV2<SystemHealth>('/api/v2/system/health');
   const enabled = providers.filter((p) => p.enabled && p.isAi);
   const usable = enabled.filter((p) => p.available && !p.limitedUntil);
-  const rows: { label: string; value: string; health: Health }[] = [
+  const fallbackRows: { label: string; value: string; health: Health }[] = [
     { label: 'Studio server', value: connection === 'live' ? 'Connected' : connection === 'connecting' ? 'Connecting…' : 'Offline',
       health: connection === 'live' ? 'ok' : connection === 'connecting' ? 'degraded' : 'down' },
     { label: 'AI providers', value: `${usable.length} of ${enabled.length} usable`,
       health: !enabled.length || !usable.length ? 'down' : usable.length < enabled.length ? 'degraded' : 'ok' },
     { label: 'Agents working', value: String(working), health: 'ok' },
   ];
-  const overall: Health = rows.some((r) => r.health === 'down') ? 'down' : rows.some((r) => r.health === 'degraded') ? 'degraded' : 'ok';
+  const rows = health ? health.checks.map((check) => ({ label: check.label, value: check.detail, health: check.state })) : fallbackRows;
+  const overall: Health = health ? health.overall
+    : rows.some((r) => r.health === 'down') ? 'down' : rows.some((r) => r.health === 'degraded') ? 'degraded' : 'ok';
   if (collapsed) {
     return <span className={cn('mx-auto block h-2.5 w-2.5 rounded-full', HEALTH_DOT[overall])} title={rows.map((r) => `${r.label}: ${r.value}`).join('\n')} />;
   }
@@ -33,8 +41,8 @@ function SystemStatus({ collapsed }: { collapsed: boolean }) {
       <dl className="space-y-1">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-2 text-[11.5px]">
-            <dt className="flex items-center gap-1.5 text-muted"><span className={cn('h-1.5 w-1.5 rounded-full', HEALTH_DOT[row.health])} />{row.label}</dt>
-            <dd className="tabular-nums text-text">{row.value}</dd>
+            <dt className="flex shrink-0 items-center gap-1.5 text-muted"><span className={cn('h-1.5 w-1.5 rounded-full', HEALTH_DOT[row.health])} />{row.label}</dt>
+            <dd className="min-w-0 truncate tabular-nums text-text" title={row.value}>{row.value}</dd>
           </div>
         ))}
       </dl>
