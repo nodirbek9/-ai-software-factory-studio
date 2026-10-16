@@ -16,7 +16,8 @@ Last updated: 2026-10-17 ~00:25 (Opus 5.5, account 1 at 95 % of its 5-hour limit
   unfinished files; the next commit completes Phase 3.
 - **Owner (2026-10-16 23:35, before sleeping): continue through the next phases without asking; commits on
   `feature/v2-studio` are approved. Still never: merge to `main`, push, restart V1, paid APIs, global installs.**
-- **Next: Phase 3 batch 2** — job briefs ready in `.ai-jobs/phase3-batch2.json` (p3-sessions, p3-workspace-ui).
+- Phase 3 batch 2 committed (see git log; 130 server + 259 web tests green). Browser check of the Workspace still to do.
+- **Next: Phase 3 browser check, then Phase 4** — job briefs ready in `.ai-jobs/phase3-batch2.json` (p3-sessions, p3-workspace-ui).
 - The running V1 on 4317 still runs pre-0b code until the owner restarts `start-studio.cmd` (no agents running).
 
 ## Follow-ups noted
