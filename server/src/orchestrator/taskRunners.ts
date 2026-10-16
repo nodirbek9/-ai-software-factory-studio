@@ -6,6 +6,7 @@ import type { AgentRunInput } from '../agents/agentExecutor.ts';
 import { parseFileProtocol, parsePlan, parseVerdict, summarize, AgentOutputError, type PlanOutput } from '../agents/parsers.ts';
 import { FILE_PROTOCOL, RESUME_NOTE, architecturePrompt, conflictPrompt, implementPrompt, planPrompt, reviewPrompt, testPrompt, type FailureSource } from '../agents/prompts.ts';
 import { transaction } from '../db/database.ts';
+import { ingestTaskFindings } from '../quality/findings.ts';
 import { generateReport } from '../reports/reportGenerator.ts';
 import { compileWorkflow, qaVerifyNodeId, WorkflowCompileError } from '../workflows/compile.ts';
 import { expandPlanRows } from '../workflows/expand.ts';
@@ -405,6 +406,19 @@ function latestTestSummary(ctx: StudioContext, runId: string): string {
   return tests.map((t) => `${t.key}: ${t.testResult!.command} -> ${t.testResult!.passed ? 'PASSED' : 'FAILED'} (${t.testResult!.summary})`).join('\n');
 }
 
+/**
+ * Stores the review's structured findings (P6-1). Only a reply with a verdict is ingested — an unfinished reply must not
+ * mark earlier findings fixed — and a parser or storage problem never fails the task.
+ */
+function recordFindings(ctx: StudioContext, task: Task, text: string): void {
+  try {
+    ingestTaskFindings(ctx, task, text, task.kind === 'security' ? 'security' : 'review');
+  } catch (error) {
+    ctx.events.emit({ projectId: task.projectId, taskId: task.id, role: task.role, type: 'findings.error', level: 'warn',
+      message: `Could not record the review findings: ${(error as Error).message}` });
+  }
+}
+
 async function runReview(args: RunnerArgs): Promise<TaskOutcome> {
   const { ctx, project, task, signal } = args;
   // The security review is the final verification barrier: whatever the PM's plan order was, the project tests run on
@@ -428,6 +442,7 @@ async function runReview(args: RunnerArgs): Promise<TaskOutcome> {
   const verdict = parseVerdict(output.text);
   const review = output.text.trim().slice(0, 20_000);
   if (!verdict) throw new AgentOutputError('Review did not end with "VERDICT: PASS" or "VERDICT: FAIL"');
+  recordFindings(ctx, task, output.text);
   ctx.repos.tasks.update(task.id, { resultSummary: review });
   if (verdict === 'fail') throw new VerificationFailedError(`${AGENT_ROLE_INFO[task.role].name} verdict: FAIL — see review findings`, 'review', review, false);
   return { summary: review };

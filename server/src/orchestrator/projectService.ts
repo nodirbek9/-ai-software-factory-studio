@@ -13,6 +13,11 @@ export class ProjectError extends Error {
   }
 }
 
+/** Runs an approved dependency audit in the background (quality/qualityService.ts, PHASE_6.md P6-3). */
+export interface AuditStarter {
+  startAudit(projectId: string): void;
+}
+
 const CHAT_TIMEOUT_MS = 5 * 60_000;
 
 function slugify(name: string): string {
@@ -22,7 +27,8 @@ function slugify(name: string): string {
 export class ProjectService {
   private readonly chats = new Set<string>();
 
-  constructor(private readonly ctx: StudioContext, private readonly scheduler: TaskScheduler, private readonly runs: RunService) {}
+  constructor(private readonly ctx: StudioContext, private readonly scheduler: TaskScheduler, private readonly runs: RunService,
+    private readonly audits: AuditStarter | null = null) {}
 
   require(projectId: string): Project {
     const project = this.ctx.repos.projects.get(projectId);
@@ -91,7 +97,10 @@ export class ProjectService {
         this.scheduler.transition(task, 'failed', { finishedAt: new Date().toISOString(), error: `Plan rejected${note ? `: ${note}` : ''}` }, 'Plan rejected', 'warn');
       }
     }
-    if (approval.kind === 'command' && decision === 'approved') {
+    // An approved audit runs once; `npm audit` never joins the project's approved commands and no task is retried.
+    const audit = approval.kind === 'command' && approval.details.purpose === 'audit';
+    if (audit && decision === 'approved') this.audits?.startAudit(approval.projectId);
+    if (!audit && approval.kind === 'command' && decision === 'approved') {
       const command = String(approval.details.command);
       this.ctx.repos.config.setSetting(`approvedCommands:${approval.projectId}`, [...new Set([...approvedCommands(this.ctx, approval.projectId), command])]);
       if (task && (task.status === 'failed' || task.status === 'cancelled')) this.scheduler.retryTask(task.id);

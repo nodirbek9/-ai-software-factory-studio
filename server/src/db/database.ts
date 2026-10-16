@@ -254,10 +254,33 @@ const MIGRATIONS: string[] = [
   INSERT OR IGNORE INTO settings (key, value)
     SELECT 'fixRounds:run-' || substr(key, 11), value FROM settings
     WHERE substr(key, 1, 10) = 'fixRounds:' AND substr(key, 1, 14) != 'fixRounds:run-';`,
+  // index 4: quality findings of security/review agents and npm audit (PHASE_6 P6-1); the per-run uniqueness of
+  // (source, task key, fingerprint) is enforced by FindingRepository (run_id is NULL for some audits)
+  `CREATE TABLE findings (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
+    task_id TEXT,
+    source TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    file TEXT,
+    line INTEGER,
+    description TEXT NOT NULL DEFAULT '',
+    recommendation TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    note TEXT,
+    fix_task_id TEXT,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_findings_project ON findings(project_id, run_id);
+  CREATE INDEX idx_findings_run ON findings(run_id, task_id);`,
 ];
 
 /** Tables whose foreign keys are verified after a migration (index → tables); a violation rolls the migration back. */
-const FOREIGN_KEY_CHECKS: Record<number, string[]> = { 3: ['tasks', 'runs', 'workflows'] };
+const FOREIGN_KEY_CHECKS: Record<number, string[]> = { 3: ['tasks', 'runs', 'workflows'], 4: ['findings'] };
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

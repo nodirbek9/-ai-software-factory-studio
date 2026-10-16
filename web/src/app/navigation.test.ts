@@ -33,13 +33,9 @@ describe('navigation model', () => {
     expect(isActive(builder, 'workflows')).toBe(false);
   });
 
-  it('explains every planned item with the phase that delivers it', () => {
-    const planned = NAV_ITEMS.filter((item) => item.view === null);
-    expect(planned.length).toBeGreaterThan(0);
-    for (const item of planned) {
-      expect(item.plannedReason?.trim()).toBeTruthy();
-      expect(item.plannedReason).toMatch(/phase/i);
-    }
+  it('has no planned items left (every destination is live since Phase 6)', () => {
+    expect(NAV_ITEMS.filter((item) => item.view === null)).toEqual([]);
+    expect(NAV_ITEMS.find((item) => item.id === 'quality')?.view).toBe('quality');
   });
 });
 

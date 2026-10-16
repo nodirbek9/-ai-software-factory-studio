@@ -1,25 +1,40 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AGENT_ROLES, EFFORT_LEVELS } from '@asf/shared';
-import type { EventsPage, OverviewResponse, ProcessBudgetSnapshot, SystemHealth, UsageSummary, WorkspaceLayout, WorkspaceLayoutNode } from '@asf/shared';
+import type {
+  EventsPage, OverviewResponse, ProcessBudgetSnapshot, SystemHealth, UsageDailyResponse, UsageSummary, WorkspaceLayout, WorkspaceLayoutNode,
+} from '@asf/shared';
 import type { EventStream } from '../events/eventStream.ts';
 import type { StudioContext } from '../orchestrator/context.ts';
 import { ProjectError } from '../orchestrator/projectService.ts';
 import { buildSystemHealth } from '../readModels/health.ts';
 import { buildOverview } from '../readModels/overview.ts';
-import { buildUsageSummary } from '../readModels/usage.ts';
+import { queryEvents } from '../readModels/logs.ts';
+import { buildUsageSummary, DEFAULT_USAGE_DAYS, MAX_USAGE_DAYS, usageDaily } from '../readModels/usage.ts';
 
 /** `?x=` (empty) means "not set". */
 const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
 
 const overviewQuery = z.object({ projectId: optional(z.string().uuid()) });
 const usageQuery = z.object({ range: optional(z.enum(['24h', '7d'])).transform((range) => range ?? '24h') });
+const isoTime = z.string().datetime({ offset: true });
 const eventsQuery = z.object({
   projectId: optional(z.string().uuid()),
-  before: optional(z.coerce.number().int().positive()),
-  limit: optional(z.coerce.number().int().min(1).max(500)).transform((limit) => limit ?? 100),
+  runId: optional(z.string().max(80)),
+  sessionId: optional(z.string().max(80)),
+  taskId: optional(z.string().max(80)),
+  role: optional(z.enum(AGENT_ROLES)),
   level: optional(z.enum(['debug', 'info', 'warn', 'error'])),
   type: optional(z.string().max(60)),
+  q: optional(z.string().max(200)),
+  from: optional(isoTime),
+  to: optional(isoTime),
+  before: optional(z.coerce.number().int().positive()),
+  limit: optional(z.coerce.number().int().min(1).max(500)).transform((limit) => limit ?? 100),
+});
+const usageDailyQuery = z.object({
+  days: optional(z.coerce.number().int().min(1).max(MAX_USAGE_DAYS)).transform((days) => days ?? DEFAULT_USAGE_DAYS),
+  projectId: optional(z.string().uuid()),
 });
 
 // ---- workspace sessions (AGENT_WORKSPACE_SPEC.md §8)
@@ -86,7 +101,8 @@ export function registerV2Routes(app: FastifyInstance, { ctx, events = ctx.event
     buildUsageSummary(ctx, usageQuery.parse(request.query).range));
   app.get('/api/v2/system/health', async (): Promise<SystemHealth & { budget: ProcessBudgetSnapshot }> =>
     ({ ...(await buildSystemHealth(ctx, events)), budget: ctx.budget.snapshot() }));
-  app.get('/api/v2/events', async (request): Promise<EventsPage> => ctx.repos.events.page(eventsQuery.parse(request.query)));
+  app.get('/api/v2/usage/daily', async (request): Promise<UsageDailyResponse> => usageDaily(ctx, usageDailyQuery.parse(request.query)));
+  app.get('/api/v2/events', async (request): Promise<EventsPage> => queryEvents(ctx, eventsQuery.parse(request.query)));
   app.get('/api/v2/budget', async (): Promise<ProcessBudgetSnapshot> => ctx.budget.snapshot());
 
   const { sessions } = ctx;

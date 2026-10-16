@@ -918,3 +918,147 @@ export interface RepoOverview {
   /** Set when git could not be read (missing folder, not a repository). */
   error: string | null;
 }
+
+// ------------------------------------------------------------------ V2 quality, logs, usage (Phase 6, UI_SCREEN_SPECIFICATIONS.md §8–§10, D-016)
+
+export const FINDING_SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const;
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+export type FindingSource = 'security' | 'review' | 'audit';
+export type FindingStatus = 'open' | 'accepted' | 'false_positive' | 'fix_planned' | 'fixed';
+
+/** One structured finding (security/review agent output or `npm audit`). */
+export interface Finding {
+  id: string;
+  projectId: string;
+  runId: string | null;
+  /** Task whose output produced it (security/review), null for audits. */
+  taskId: string | null;
+  source: FindingSource;
+  severity: FindingSeverity;
+  title: string;
+  file: string | null;
+  line: number | null;
+  description: string;
+  recommendation: string | null;
+  status: FindingStatus;
+  note: string | null;
+  /** Fix task created from this finding. */
+  fixTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FindingQuery {
+  projectId?: string;
+  runId?: string;
+  severity?: FindingSeverity;
+  source?: FindingSource;
+  status?: FindingStatus;
+  q?: string;
+  limit?: number;
+}
+
+export interface FindingsResponse {
+  findings: Finding[];
+  /** Counts over the same filter without severity (for the counter strip). */
+  counts: Record<FindingSeverity, number>;
+  truncated: boolean;
+}
+
+export interface UpdateFindingInput {
+  status: 'open' | 'accepted' | 'false_positive';
+  note?: string | null;
+}
+
+export type GateState = 'passed' | 'failed' | 'error' | 'not_run';
+export type QualityGateId = 'build' | 'tests' | 'security' | 'review' | 'audit' | 'coverage';
+
+export interface QualityGate {
+  id: QualityGateId;
+  label: string;
+  state: GateState;
+  /** What the state is based on ("api-tests: 12 passed", "no build step in this run"). */
+  detail: string;
+  /** Task or audit the state comes from. */
+  taskId: string | null;
+  at: string | null;
+}
+
+/** Release readiness of one run: ready only when every gate passed (not_run is never a pass, D-016). */
+export interface ReleaseReadiness {
+  runId: string;
+  runNumber: number;
+  gates: QualityGate[];
+  ready: boolean;
+  /** Open findings with severity critical or high. */
+  blockingFindings: number;
+}
+
+export interface TestRunRow {
+  taskId: string;
+  taskKey: string;
+  title: string;
+  runId: string;
+  result: TestResult;
+  finishedAt: string | null;
+}
+
+export interface ScannerInfo {
+  id: 'tests' | 'security-agent' | 'review-agent' | 'npm-audit' | 'guardian';
+  label: string;
+  /** Detected/usable on this machine and project. */
+  available: boolean;
+  /** Version string when known (npm version for npm-audit). */
+  version: string | null;
+  lastRunAt: string | null;
+  /** Why it is unavailable, or how it runs ("runs with each QA task", "needs your approval — network access"). */
+  note: string;
+}
+
+/** `GET /api/v2/projects/:id/quality?runId=` */
+export interface QualityOverview {
+  projectId: string;
+  readiness: ReleaseReadiness | null;
+  testRuns: TestRunRow[];
+  scanners: ScannerInfo[];
+  /** Audit waiting for approval (approval id), if one was requested. */
+  pendingAuditApprovalId: string | null;
+}
+
+export interface LogQuery {
+  projectId?: string;
+  runId?: string;
+  sessionId?: string;
+  taskId?: string;
+  role?: AgentRole;
+  level?: EventLevel;
+  /** Exact type, or a prefix ending in '.*' ("task.*"). */
+  type?: string;
+  /** Case-insensitive search in message (server side). */
+  q?: string;
+  /** ISO times, inclusive. */
+  from?: string;
+  to?: string;
+  before?: number;
+  limit?: number;
+}
+
+/** One row of usage analytics (`GET /api/v2/usage/daily?days=&projectId=`), grouped by day × provider × model × project. */
+export interface UsageDailyRow {
+  /** YYYY-MM-DD (server local time). */
+  day: string;
+  providerId: string;
+  model: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  /** null when no record of the group reported a cost. */
+  costUsd: number | null;
+  calls: number;
+}
+
+export interface UsageDailyResponse {
+  days: number;
+  rows: UsageDailyRow[];
+}

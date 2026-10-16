@@ -16,7 +16,20 @@ interface UsageRow {
 }
 
 const usd = (value: number) => value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
-const KIND_LABEL = { cli: 'CLI', api: 'API', builtin: 'Built-in' } as const;
+/** Subscription CLIs sign in with a login; API providers read a key from the server .env (never shown). */
+const KIND_LABEL = { cli: 'CLI login', api: 'API key', builtin: 'Built-in' } as const;
+
+/** Providers with native session resume (Phase 3 continuity: claude-code and its claude-code-<n> logins, codex); the rest replay context. */
+const NATIVE_RESUME = /^(claude-code(-\d+)?|codex)$/;
+export const resumeLabel = (providerId: string): string => (NATIVE_RESUME.test(providerId) ? 'Native resume' : 'Context replay');
+
+/** "Limit until hh:mm" (local time) while the provider's usage limit is used up, else null. */
+export function limitLabel(provider: Pick<ProviderInfo, 'limitedUntil'>): string | null {
+  if (!provider.limitedUntil) return null;
+  const until = new Date(provider.limitedUntil);
+  if (Number.isNaN(until.getTime())) return null;
+  return `Limit until ${until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
+}
 
 function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const [budget, setBudget] = useState(provider.budgetUsd?.toString() ?? '');
@@ -65,7 +78,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         <p className={`break-words text-[12px] ${provider.available ? 'text-st-completed' : 'text-st-waiting'}`}>
           {provider.available ? `Detected${provider.version ? ` ${provider.version}` : ''}` : provider.reason || 'Unavailable. Re-detect after configuring this provider.'}
         </p>
-        <p className="text-[12px] text-muted">{provider.editsFiles ? 'Edits files directly' : 'Uses file-edit protocol'}</p>
+        {limitLabel(provider) && <p className="text-[12px] text-st-waiting">{limitLabel(provider)}</p>}
+        <p className="text-[12px] text-muted">{provider.editsFiles ? 'Edits files directly' : 'Uses file-edit protocol'} · {resumeLabel(provider.id)}</p>
         <label className="flex items-center gap-2 text-[12px] text-muted">
           <input type="checkbox" role="switch" className="accent-brand" checked={provider.enabled} disabled={pending}
             onChange={(event) => void update({ enabled: event.target.checked })} />

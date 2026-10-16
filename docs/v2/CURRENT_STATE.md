@@ -34,6 +34,10 @@ Last updated: 2026-10-17 ~00:50 (Opus 5.5, account 1, automated night run asf-v2
   (`server/test/workflows-run.test.ts`). Gates: 176 server + 358 web tests, typecheck, build green.
   Not done: browser check of the builder (preview server not allowed in the automated run); Runs page (`#/runs`) still
   maps to Monitor — run history lives in the builder's bottom panel.
+- **Phase 5 committed `a0a996f`** (01:45; workers on account 5: p5-server Opus, p5-tasks-ui + p5-projects-ui Sonnet).
+  Opus wired the routes (Tasks → `#/tasks`, Repos → `#/repos`, `#/projects/:id`, V1 graph `#/task-graph`, V1 files
+  `#/files`), fixed a flaky drawer test and a real multi-run bug (task branch names now `r<N>-<key>-a<n>` from run 2 on)
+  with a regression test. Gates: 188 server + 418 web tests green.
 
 ## Follow-ups noted
 - Verify whether Codex, Antigravity and Gemini CLIs load project-level config from a repository (S1 note).

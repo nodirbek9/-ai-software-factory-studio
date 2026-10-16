@@ -2,7 +2,14 @@
 
 Work in `D:\jarvis 2\asf-v2` (branch `feature/v2-studio`). Read `docs/v2/CURRENT_STATE.md` first.
 
-## Phase 5 (in progress, started 01:25) — `docs/v2/phases/PHASE_5.md`
+## Phase 6 (in progress, started 01:55) — `docs/v2/phases/PHASE_6.md`
+1. Contract appended to `shared/src/index.ts` (Finding…, QualityOverview, LogQuery, UsageDaily…; not committed yet).
+2. Jobs `.ai-jobs/phase6.json` on account 5 in two waves: server (p6-findings, p6-quality-api Opus; p6-logs-usage-server
+   Sonnet) then UI (p6-quality-ui, p6-logs-ui, p6-models-ui Sonnet). Logs `.ai-jobs/akk5-p6-*.log`. If cut off, re-run
+   the missing ids with `node .ai-jobs/run-akk4.mjs .ai-jobs/phase6.json <id>=<model>` (account 4 is back after 03:20).
+3. Opus wires the `quality` view + sidebar item (P6-8), gates, review, commit.
+
+## Phase 5 (DONE, `a0a996f`, 01:45) — `docs/v2/phases/PHASE_5.md`
 1. Contract appended to `shared/src/index.ts` (TaskRow, TaskDetail, TaskDiff, RepoOverview…, not committed yet).
 2. Batch on account 5: `.ai-jobs/phase5.json` (p5-server Opus, p5-tasks-ui, p5-projects-ui Sonnet); logs `.ai-jobs/akk5-p5-*.log`.
    Re-run if cut off: `CLAUDE_WORKER_ACCOUNT=5 node .ai-jobs/run-akk4.mjs .ai-jobs/phase5.json p5-server=claude-opus-5-5 p5-tasks-ui=claude-sonnet-5-5 p5-projects-ui=claude-sonnet-5-5`

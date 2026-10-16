@@ -68,18 +68,15 @@ describe('CommandPalette', () => {
     expect(selected()).toBe(0);
   });
 
-  it('lists a planned item with its reason and does not navigate or close on Enter', () => {
+  it('opens QA & Security from the palette (no planned destinations remain)', () => {
     const { input, onClose } = openPalette();
-    const planned = NAV_ITEMS.find((item) => item.label === 'QA & Security');
-    expect(planned?.plannedReason).toBeTruthy();
+    expect(NAV_ITEMS.some((item) => item.view === null)).toBe(false);
     fireEvent.change(input, { target: { value: 'QA & Security' } });
     const option = screen.getByRole('option', { name: /QA & Security/ });
-    expect(option.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText(planned!.plannedReason!)).toBeTruthy();
+    expect(option.getAttribute('aria-disabled')).toBeNull();
     fireEvent.keyDown(input, { key: 'Enter' });
-    fireEvent.click(option);
-    expect(window.location.hash).toBe('');
-    expect(onClose).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#/quality');
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('opens the Agent Workspace page from the palette', () => {

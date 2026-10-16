@@ -5,6 +5,7 @@ import type {
   Task, TaskKind, TaskNodeOptions, TaskStatus, TestResult, UsageInfo, WorkspaceLayout,
 } from '@asf/shared';
 import type { Db } from './database.ts';
+import { FindingRepository } from './findingRepository.ts';
 import { RunRepository, WorkflowRepository } from './runRepositories.ts';
 import { redact } from '../security/redact.ts';
 
@@ -693,6 +694,9 @@ export interface Repositories {
   sessions: SessionRepository;
   runs: RunRepository;
   workflows: WorkflowRepository;
+  findings: FindingRepository;
+  /** Read-only queries of the V2 read models (readModels/logs.ts, usage.ts); writes go through the repositories. */
+  db: Db;
 }
 
 export function createRepositories(db: Db): Repositories {
@@ -700,6 +704,6 @@ export function createRepositories(db: Db): Repositories {
     projects: new ProjectRepository(db), tasks: new TaskRepository(db), events: new EventRepository(db),
     approvals: new ApprovalRepository(db), messages: new MessageRepository(db), config: new ConfigRepository(db),
     usage: new UsageRepository(db), sessions: new SessionRepository(db), runs: new RunRepository(db),
-    workflows: new WorkflowRepository(db),
+    workflows: new WorkflowRepository(db), findings: new FindingRepository(db), db,
   };
 }

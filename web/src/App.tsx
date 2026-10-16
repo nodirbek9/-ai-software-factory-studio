@@ -23,6 +23,7 @@ const PAGES: Record<View, LazyExoticComponent<ComponentType>> = {
   projects: page(() => import('@/pages/ProjectsRoute'), 'ProjectsRoute'),
   tasks: lazy(() => import('@/pages/Tasks')),
   repos: lazy(() => import('@/pages/Repos')),
+  quality: lazy(() => import('@/pages/Quality')),
   workflows: page(() => import('@/pages/Workflows'), 'Workflows'),
   files: page(() => import('@/pages/Files'), 'Files'),
   logs: page(() => import('@/pages/Logs'), 'Logs'),

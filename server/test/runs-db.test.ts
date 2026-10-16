@@ -36,7 +36,7 @@ const count = (db: Db, table: string): number => Number((db.prepare(`SELECT COUN
 
 /** A database at the schema before the runs migration, holding V1-shaped projects, tasks, usage and fix-round settings. */
 function seedOldDatabase(file: string): void {
-  const db = openDatabase(file, { upToVersion: SCHEMA_VERSION - 1 });
+  const db = openDatabase(file, { upToVersion: 3 }); // schema just before the runs migration (index 3)
   const project = db.prepare(`INSERT INTO projects (id, name, slug, spec, status, workspace_mode, workspace_path, base_commit, test_command,
     created_at, updated_at) VALUES (?, ?, ?, 'spec', ?, 'new', '/tmp/x', ?, 'npm test', ?, ?)`);
   project.run('p1', 'One', 'one', 'completed', 'abc123', '2026-10-01T10:00:00.000Z', '2026-10-01T11:00:00.000Z');

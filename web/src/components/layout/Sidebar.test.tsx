@@ -22,20 +22,18 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBeNull();
   });
 
-  it('navigates with live items and explains planned ones instead of navigating', () => {
+  it('navigates with live items; every item is live since Phase 6', () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByRole('button', { name: 'Logs' }));
     expect(useStudio.getState().view).toBe('logs');
     expect(window.location.hash).toBe('#/logs');
 
     const quality = screen.getByRole('button', { name: 'QA & Security' });
-    expect(quality.getAttribute('aria-disabled')).toBe('true');
-    expect(quality.getAttribute('title')).toMatch(/Phase 6/);
+    expect(quality.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(quality);
-    expect(useStudio.getState().view).toBe('logs');
-    for (const item of NAV_ITEMS.filter((entry) => entry.view === null)) {
-      expect(screen.getByText(item.plannedReason!)).toBeTruthy();
-    }
+    expect(useStudio.getState().view).toBe('quality');
+    expect(window.location.hash).toBe('#/quality');
+    expect(NAV_ITEMS.filter((entry) => entry.view === null)).toEqual([]);
   });
 
   it('opens the Workflow Builder page', () => {
