@@ -1,8 +1,12 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 ~02:20 (Opus 5.5, account 1, automated night run asf-v2-continue-0030).
+Last updated: 2026-10-17 ~05:40 (Opus 5.5, account 1, automated run asf-v2-continue-0540: gates re-verified only).
 
 ## Owner report (Uzbek)
+
+**05:40 qayta tekshiruv (asf-v2-continue-0540):** Phase 0–6 allaqachon tugagan, yangi kod yozilmadi.
+`npm run typecheck`, `npm run build`, `npm test` qayta ishga tushirildi — hammasi yashil (server 228, web 486).
+Working tree toza, boshqa worker jarayonlari ishlamayapti. Quyidagi hisobot hali ham to'g'ri.
 
 **Nima qilindi (2026-10-17, 00:30–02:20, avtomatik tungi ish):**
 - Phase 3 gate'lari qayta tekshirildi: hammasi yashil.
