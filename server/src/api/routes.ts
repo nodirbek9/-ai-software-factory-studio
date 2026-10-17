@@ -317,6 +317,9 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
   if (fs.existsSync(config.webDistDir)) {
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) return reply.code(404).send({ error: 'Not found' });
+      // A missing build file (an old tab asking for a chunk of the previous build) is a 404, not the page: served as
+      // HTML it fails with a MIME error that the dashboard cannot tell apart from a broken build.
+      if (request.url.startsWith('/assets/')) return reply.code(404).send('Not found');
       return reply.sendFile('index.html');
     });
   }
