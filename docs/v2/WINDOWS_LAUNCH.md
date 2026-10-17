@@ -37,7 +37,14 @@ provider only; it spends no AI quota and never touches `data/`.
    operational". The end-to-end Scripted run was checked by the E2E suite on the merged code (temp data); in the real
    database the sample project would use the owner's configured AI providers and spend quota.
 
+## If the studio stopped
+Open `data/logs/lifecycle.log` (in the studio folder): each start and stop is one line — Ctrl+C, a closed window
+(SIGHUP), Ctrl+Break, or a crash with its error. Then start `start-studio.cmd` again.
+
 ## Rollback
+Since V2.2 the database is at schema 6; its first start wrote `data/backups/studio-before-v6.db`. To go back to V2.1
+code, restore that file; to go back to V1, use `studio-before-v5.db` (below).
+
 1. Close the studio window. 2. Copy `data/backups/studio-before-v5.db` (or
 `D:\jarvis 2\backups\asf-v1-final-2026-10-17\studio.db`) over `data/studio.db` and delete `studio.db-wal` and
 `studio.db-shm`. 3. `git checkout 6307bd6` (V1 with the Phase 0b fixes; `v1.0.0` is V1 without them), `npm install`,

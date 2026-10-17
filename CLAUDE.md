@@ -22,7 +22,7 @@ Read only the files a step needs; do not re-scan the whole repository.
   (check `GET http://127.0.0.1:4317/api/live` → `running` must be empty). Development copies run on
   ports 4327/5327 with their own `ASF_DATA_DIR` (decision D-001).
 - No commits/pushes, global installs, paid API calls or destructive actions without the owner's
-  explicit "ha" in chat. Git: `main` = V2 (tags `v1.0.0`, `v2.0.0`, `v2.1.0`) in
+  explicit "ha" in chat. Git: `main` = V2 (tags `v1.0.0`, `v2.0.0`, `v2.1.0`, `v2.2.0`) in
   `D:\jarvis 2\ai-software-factory-studio` (the running studio). Develop on a feature branch in the dev worktree
   `D:\jarvis 2\asf-v2` (`start-v2-dev.cmd`: API 4327, web 5327, own data); never edit the running checkout directly.
 - Backups: `D:\jarvis 2\backups\asf-v1-2026-10-16\` and `asf-v1-final-2026-10-17\` (V1 DB right before the cut-over,
