@@ -7,7 +7,7 @@ import { activeRunOf } from '@/features/workflows/workflowsStore';
 import { RunStatusPill, formatCost, formatMs } from '@/features/workflows/RunPanel';
 import { cn, formatDuration, timeAgo } from '@/lib/utils';
 import { useStudio } from '@/store/studio';
-import { getReport } from './projectsApi';
+import { getInstallScripts, getReport, setInstallScripts } from './projectsApi';
 
 export const PROJECT_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -334,7 +334,52 @@ function SettingsTab({ project }: { project: Project }) {
         {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-muted">{label}</dt><dd className="min-w-0">{value}</dd></div>)}
       </dl>
       <p className="text-[12px] text-faint">Read-only. Settings are changed when the project is created.</p>
+      <InstallScriptsSetting projectId={project.id} />
     </div>
+  );
+}
+
+const ALLOW_SCRIPTS_WARNING = 'Allow package install scripts for this project?\n\n'
+  + 'npm/pnpm/yarn install will then run every dependency\'s preinstall/install/postinstall script with your file access. '
+  + 'Only allow this for projects whose dependencies you trust.';
+
+/** P7-S8: package installs run with --ignore-scripts until the owner allows scripts for this project. */
+function InstallScriptsSetting({ projectId }: { projectId: string }) {
+  const load = useCallback(() => getInstallScripts(projectId), [projectId]);
+  const { data, error, loading, reload } = useLoad(load);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const change = async (allowed: boolean) => {
+    if (allowed && !window.confirm(ALLOW_SCRIPTS_WARNING)) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await setInstallScripts(projectId, allowed);
+      reload();
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (error && data === null) return <ErrorState title="Could not load the install-scripts setting" message={error} onRetry={reload} />;
+  if (loading && data === null) return <Loading label="Loading install-scripts setting" />;
+  return (
+    <section aria-label="Package install scripts" className="rounded-md border border-line-soft p-3 text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium text-text">Package install scripts: {data ? 'allowed' : 'blocked'}</p>
+          <p className="text-[12px] text-muted">
+            {data ? 'npm/pnpm/yarn install runs dependency lifecycle scripts for this project.'
+              : 'npm/pnpm/yarn install runs with --ignore-scripts, so no dependency script runs on your machine.'}
+          </p>
+        </div>
+        <Button size="sm" variant={data ? 'secondary' : 'danger'} disabled={saving} onClick={() => void change(!data)}>
+          {data ? 'Block scripts again' : 'Allow scripts'}
+        </Button>
+      </div>
+      {saveError && <p role="alert" className="mt-2 text-[12px] text-st-failed">{saveError}</p>}
+    </section>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, History, PanelRight, Plus, Terminal } from 'lucide-react';
+import { Download, History, PanelRight, Plus } from 'lucide-react';
 import { Button, EmptyState, Select, Skeleton } from '@/components/ui/primitives';
 import { useStudio } from '@/store/studio';
 import { cn } from '@/lib/utils';
@@ -161,9 +161,6 @@ export function Workspace() {
             </Button>
             <Button disabled={!layout} onClick={() => downloadLayout(projectName)} title="Download the layout as JSON">
               <Download size={14} aria-hidden="true" /> Export layout
-            </Button>
-            <Button disabled title="Interactive terminal is optional and needs your approval first (Phase 3c)">
-              <Terminal size={14} aria-hidden="true" /> Terminal
             </Button>
             <Button variant="primary" disabled={!layout} onClick={() => setDialog({ open: true })}>
               <Plus size={14} aria-hidden="true" /> New Session

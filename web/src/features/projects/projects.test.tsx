@@ -11,7 +11,7 @@ import { RepoView } from './RepoView';
 
 vi.mock('./projectsApi', () => ({
   getSnapshot: vi.fn(), pauseProject: vi.fn(), resumeProject: vi.fn(), cancelProject: vi.fn(), getReport: vi.fn(),
-  getRepo: vi.fn(), listWorkflows: vi.fn(), startRun: vi.fn(), listRuns: vi.fn(),
+  getInstallScripts: vi.fn(), setInstallScripts: vi.fn(), getRepo: vi.fn(), listWorkflows: vi.fn(), startRun: vi.fn(), listRuns: vi.fn(),
 }));
 vi.mock('@/components/Markdown', async () => {
   const { createElement } = await import('react');
@@ -56,6 +56,7 @@ function setup({ project = {}, tasks = [], runs = [runFixture()], workflows = [w
   mocked.listRuns.mockResolvedValue({ runs, nextBefore: null } satisfies RunsPage);
   mocked.listWorkflows.mockResolvedValue(workflows);
   mocked.getReport.mockResolvedValue(null);
+  mocked.getInstallScripts.mockResolvedValue(false);
 }
 
 async function openDetail() {
@@ -305,6 +306,25 @@ describe('ProjectDetail tabs', () => {
     await tab('Settings');
     expect(screen.getByText('npm run check')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('Settings: install scripts are blocked until the owner confirms allowing them (P7-S8)', async () => {
+    setup();
+    mocked.setInstallScripts.mockResolvedValue(true);
+    await openDetail();
+    await tab('Settings');
+    const section = await screen.findByRole('region', { name: 'Package install scripts' });
+    expect(within(section).getByText('Package install scripts: blocked')).toBeTruthy();
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    fireEvent.click(within(section).getByRole('button', { name: 'Allow scripts' }));
+    expect(mocked.setInstallScripts).not.toHaveBeenCalled();
+
+    mocked.getInstallScripts.mockResolvedValue(true);
+    fireEvent.click(within(section).getByRole('button', { name: 'Allow scripts' }));
+    await waitFor(() => expect(mocked.setInstallScripts).toHaveBeenCalledWith('project-1', true));
+    expect(await within(section).findByText('Package install scripts: allowed')).toBeTruthy();
+    confirm.mockRestore();
   });
 });
 

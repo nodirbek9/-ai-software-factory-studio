@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { RotateCcw, Square } from 'lucide-react';
 import { AGENT_ROLE_INFO, type AgentSession, type WorkspacePanelTab } from '@asf/shared';
 import { ROLE_HUE, ROLE_ICON } from '@/components/agentMeta';
@@ -14,12 +14,15 @@ import { PanelFrame } from './PanelFrame';
 import type { MenuItem } from './PanelMenu';
 import { ActivityTab, ChangesTab, FilesTab, OutputTab, TaskTab } from './SessionTabs';
 import { useSessions, watchSession, type SessionAction, type TurnPage } from './sessionsStore';
+
+/** xterm.js loads only when a Terminal tab is shown (Phase 3c). */
+const TerminalTab = lazy(() => import('./TerminalTab'));
 import { updateLayout } from './workspaceContext';
 
 const NO_PAGE: TurnPage = { items: [], nextBefore: null, loading: false, loaded: false, error: null };
 
 const TAB_LABELS: Record<WorkspacePanelTab, string> = {
-  chat: 'Chat', activity: 'Activity', changes: 'Changes', files: 'Files', output: 'Output', task: 'Task',
+  chat: 'Chat', activity: 'Activity', changes: 'Changes', files: 'Files', output: 'Output', task: 'Task', terminal: 'Terminal',
 };
 
 export function availableTabs(session: AgentSession): WorkspacePanelTab[] {
@@ -27,6 +30,8 @@ export function availableTabs(session: AgentSession): WorkspacePanelTab[] {
   if (session.mode === 'edit') tabs.push('changes');
   tabs.push('files', 'output');
   if (session.taskId) tabs.push('task');
+  // Owner terminal (Phase 3c): only in an edit session's own worktree.
+  if (session.mode === 'edit' && session.cwdKind === 'own-worktree' && session.status !== 'closed') tabs.push('terminal');
   return tabs;
 }
 
@@ -99,6 +104,7 @@ function SessionBody({ panelId, session, tab }: { panelId: string; session: Agen
         {current === 'files' && <FilesTab session={session} />}
         {current === 'output' && <OutputTab session={session} page={page} />}
         {current === 'task' && <TaskTab session={session} />}
+        {current === 'terminal' && <Suspense fallback={<p className="p-3 text-[12px] text-muted">Loading terminal…</p>}><TerminalTab session={session} /></Suspense>}
       </div>
     </div>
   );

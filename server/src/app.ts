@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
+import fastifyWebsocket from '@fastify/websocket';
 import { AgentExecutor } from './agents/agentExecutor.ts';
 import { registerQualityRoutes } from './api/qualityRoutes.ts';
 import { registerRoutes } from './api/routes.ts';
 import { registerV2WorkRoutes } from './api/v2WorkRoutes.ts';
+import { registerTerminalRoutes } from './api/terminalRoutes.ts';
+import { TerminalManager, type PtySpawn } from './terminal/terminalManager.ts';
 import { registerWorkflowRoutes } from './api/workflowRoutes.ts';
 import { loadConfig, type AppConfig } from './config.ts';
 import { openDatabase } from './db/database.ts';
@@ -33,13 +36,15 @@ export interface Studio {
   runs: RunService;
   /** QA & Security: readiness gates, findings, fix tasks and the approval-gated npm audit (Phase 6). */
   quality: QualityService;
+  /** Owner terminals in edit-session worktrees (Phase 3c). */
+  terminals: TerminalManager;
   /** Crash recovery + scheduling; call after the HTTP port is bound. */
   start: () => Promise<void>;
   close: () => Promise<void>;
 }
 
 export async function createStudio(overrides: Partial<AppConfig> = {},
-  options: { logger?: boolean; extraProviders?: ProviderAdapter[]; deferRecovery?: boolean } = {}): Promise<Studio> {
+  options: { logger?: boolean; extraProviders?: ProviderAdapter[]; deferRecovery?: boolean; ptySpawn?: PtySpawn } = {}): Promise<Studio> {
   const config = loadConfig(overrides);
   registerSecret(config.authToken);
   registerSecret(config.env.ASF_OPENAI_API_KEY);
@@ -72,11 +77,17 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
     logController: new Fastify.LogController({ disableRequestLogging: true }) });
   // wildcard: true resolves files per request, so a rebuilt dashboard is served without a restart.
   if (fs.existsSync(config.webDistDir)) await app.register(fastifyStatic, { root: config.webDistDir, wildcard: true });
+  // 64 KB frames: terminal input is typed or pasted text.
+  await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } });
   registerRoutes(app, { ctx, projects, scheduler });
   // After registerRoutes: the security hooks and the error handler set there apply to these routes too.
   registerWorkflowRoutes(app, { ctx, runs });
   registerV2WorkRoutes(app, { ctx });
   registerQualityRoutes(app, { quality });
+  const terminals = new TerminalManager(ctx, ctx.sessions, options.ptySpawn);
+  ctx.sessions.beforeWorktreeRemoval = (sessionId) => terminals.closeForSession(sessionId);
+  projects.beforeFilesRemoval = (projectId) => terminals.closeForProject(projectId);
+  registerTerminalRoutes(app, { config, terminals });
   const recover = async (): Promise<void> => {
     await ctx.sessions.recover();
     await scheduler.recover();
@@ -85,9 +96,10 @@ export async function createStudio(overrides: Partial<AppConfig> = {},
   if (!options.deferRecovery) await recover();
 
   return {
-    app, ctx, scheduler, projects, runs, quality,
+    app, ctx, scheduler, projects, runs, quality, terminals,
     start: recover,
     close: async () => {
+      await terminals.shutdown();
       await Promise.all([ctx.sessions.shutdown(), scheduler.shutdown()]);
       stopBudgetEvents();
       await app.close();

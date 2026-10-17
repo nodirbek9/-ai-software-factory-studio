@@ -540,7 +540,7 @@ export type WorkspaceLayoutNode =
   | { type: 'panel'; id: string }
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: WorkspaceLayoutNode[] };
 
-export type WorkspacePanelTab = 'chat' | 'activity' | 'changes' | 'files' | 'output' | 'task';
+export type WorkspacePanelTab = 'chat' | 'activity' | 'changes' | 'files' | 'output' | 'task' | 'terminal';
 
 export interface WorkspaceLayout {
   version: 1;

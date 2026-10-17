@@ -12,7 +12,7 @@ export const WORKSPACE_PRESETS: readonly WorkspacePreset[] = [1, 2, 3, 4, 5, 6, 
 export const MAX_RECENTLY_CLOSED = 10;
 
 const PRESET_ROWS: Record<WorkspacePreset, number[]> = { 1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [3, 2], 6: [3, 3], 8: [4, 4] };
-const TABS: readonly WorkspacePanelTab[] = ['chat', 'activity', 'changes', 'files', 'output', 'task'];
+const TABS: readonly WorkspacePanelTab[] = ['chat', 'activity', 'changes', 'files', 'output', 'task', 'terminal'];
 const DRAWER_TABS = ['coordination', 'context', 'artifacts'] as const;
 const DEFAULT_DRAWER_WIDTH = 360;
 const MAX_DEPTH = 16;

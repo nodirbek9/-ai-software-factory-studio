@@ -112,3 +112,9 @@ V1's guards are solid for a local tool, but eight HIGH issues (audit R1–R7 plu
 hooks) must be fixed in a short Phase 0b before V2 adds sessions, tool nodes and terminals. V2's new surfaces
 each get concrete controls, audit events and confirmations. The QualityScanner contract lets a future Guardian
 plug in without UI changes and guarantees that "not run" is never shown as PASS.
+
+## V2.1 review (2026-10-17)
+Independent review of the owner terminals, install-script policy and snapshot change (GPT-6-Astra), Opus verdicts in
+`docs/v2/phases/V2_1.md`: V21-S1 (absolute-form requests skipped the API hooks, pre-existing) and S3–S9 fixed with
+tests; V21-S2 (tokenless loopback) accepted as residual — recommend `ASF_AUTH_TOKEN` when other OS users or networked
+sandboxed agents share the PC.

@@ -12,6 +12,7 @@ import { getSettings, type StudioContext } from '../orchestrator/context.ts';
 import type { ProcessSlotRelease } from '../orchestrator/processBudget.ts';
 import { ProjectError } from '../orchestrator/projectService.ts';
 import { approvedCommands, filesWithConflictMarkers, integrateBranch, type ConflictResolver } from '../orchestrator/taskRunners.ts';
+import { installScriptsAllowed } from '../security/installScripts.ts';
 import { redact } from '../security/redact.ts';
 import { isSensitivePath } from '../security/sensitiveFiles.ts';
 import { isAllowedCommand, runAllowedCommand } from '../workspace/commandRunner.ts';
@@ -140,6 +141,8 @@ export class SessionManager {
   private readonly actions = new Map<string, ActiveAction>();
   private readonly unsubscribeBudget: () => void;
   private stopped = false;
+  /** Set by the app: closes the owner terminals of a session before its worktree is removed (Phase 3c). */
+  beforeWorktreeRemoval?: (sessionId: string) => Promise<void>;
 
   constructor(private readonly ctx: StudioContext) {
     this.unsubscribeBudget = ctx.budget.onChange(() => this.publishQueuePositions());
@@ -232,6 +235,7 @@ export class SessionManager {
         const dirty = (await this.uncommittedFiles(session)).length > 0;
         const unmerged = await git(worktree, ['log', '--oneline', `${project.integrationBranch}..HEAD`]);
         if (dirty || unmerged) throw new SessionError('Merge or discard the changes of this session before closing it', 409);
+        await this.beforeWorktreeRemoval?.(session.id);
         await this.ctx.workspace.removeWorktree(project, worktree);
       }
       const closed = this.ctx.repos.sessions.update(sessionId, { status: 'closed', closedAt: now(),
@@ -367,6 +371,7 @@ export class SessionManager {
     if (session.mode !== 'edit') throw new SessionError('Only edit sessions have a worktree to discard', 409);
     return this.withAction(session, 'discard', async () => {
       const project = this.project(session.projectId);
+      await this.beforeWorktreeRemoval?.(session.id); // an open terminal would lock the folder and keep writing to it
       const save = this.worktreeOf(session) ? await this.saveWip(session, 'work kept when the worktree was discarded') : { saved: true };
       // A failed save keeps the worktree: removing it would lose the uncommitted work (R7, P7-S2).
       if (!save.saved) throw new SessionError("Could not commit the worktree's changes, so it was kept; see the session log", 409);
@@ -398,7 +403,8 @@ export class SessionManager {
       if (!cwd) throw new SessionError('The worktree of this session was discarded', 409);
       const output = this.outputStream(session, 'tests');
       this.emit(session, 'session.tests', `${label(session)}: running ${command}`, { command, state: 'started' });
-      const run = (): Promise<TestResult> => runAllowedCommand(command, cwd, { signal, approved, onOutput: (chunk) => output.push(chunk),
+      const run = (): Promise<TestResult> => runAllowedCommand(command, cwd, { signal, approved, allowInstallScripts: installScriptsAllowed(this.ctx, project.id),
+        onOutput: (chunk) => output.push(chunk),
         timeoutMs: getSettings(this.ctx).taskTimeoutMinutes * 60_000 });
       let result: TestResult;
       try {
@@ -455,6 +461,19 @@ export class SessionManager {
     const diff = parts.join('\n');
     if (diff.length <= MAX_DIFF_CHARS) return { diff, files, truncated: false };
     return { diff: `${diff.slice(0, MAX_DIFF_CHARS)}\n…(diff truncated: it is larger than 300 KB)`, files, truncated: true };
+  }
+
+  /** The own worktree of an open edit session, for an owner terminal (Phase 3c); read-only sessions share the integration worktree. */
+  terminalCwd(sessionId: string): { cwd: string; projectId: string } {
+    const session = this.require(sessionId);
+    if (session.status === 'closed') throw new SessionError('This session is closed', 409);
+    if (session.mode !== 'edit') throw new SessionError('Terminals open only in an edit session (its own worktree)', 409);
+    // Merge, discard or close may be removing the worktree right now (V21-S4).
+    const busy = this.actions.get(sessionId);
+    if (busy) throw new SessionError(`This session is busy (${busy.name}); open the terminal when it is done`, 409);
+    const worktree = this.worktreeOf(session);
+    if (!worktree) throw new SessionError('The worktree of this session was discarded', 409);
+    return { cwd: worktree, projectId: session.projectId };
   }
 
   files(sessionId: string): FileEntry[] {

@@ -2,8 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AGENT_ROLES, type RepoOverview, type TaskDetail, type TaskDiff, type TasksResponse, type TaskStatus } from '@asf/shared';
 import type { StudioContext } from '../orchestrator/context.ts';
+import { ProjectError } from '../orchestrator/projectService.ts';
 import { repoOverview } from '../readModels/repoReadModel.ts';
 import { listTasks, taskDetail, taskDiff } from '../readModels/tasksReadModel.ts';
+import { installScriptsAllowed, setInstallScriptsAllowed } from '../security/installScripts.ts';
 
 // Phase 5 read routes: tasks across projects, the task drawer and diff, and a project's git overview (PHASE_5.md).
 // Registered after registerRoutes, so its security hooks and error handler apply.
@@ -24,6 +26,7 @@ const tasksQuery = z.object({
 });
 const taskParam = z.object({ id: z.string().min(1).max(100) });
 const projectParam = z.object({ id: z.string().uuid() });
+const installScriptsBody = z.object({ allowed: z.boolean(), confirm: z.literal(true) });
 
 export interface V2WorkRouteDeps {
   ctx: StudioContext;
@@ -34,4 +37,19 @@ export function registerV2WorkRoutes(app: FastifyInstance, { ctx }: V2WorkRouteD
   app.get('/api/v2/tasks/:id', async (request): Promise<TaskDetail> => taskDetail(ctx, taskParam.parse(request.params).id));
   app.get('/api/v2/tasks/:id/diff', async (request): Promise<TaskDiff> => taskDiff(ctx, taskParam.parse(request.params).id));
   app.get('/api/v2/projects/:id/repo', async (request): Promise<RepoOverview> => repoOverview(ctx, projectParam.parse(request.params).id));
+
+  // P7-S8: package install scripts are off (--ignore-scripts) until the owner allows them for a project.
+  const requireProject = (params: unknown): string => {
+    const { id } = projectParam.parse(params);
+    if (!ctx.repos.projects.get(id)) throw new ProjectError('Project not found', 404);
+    return id;
+  };
+  app.get('/api/v2/projects/:id/install-scripts', async (request): Promise<{ allowed: boolean }> =>
+    ({ allowed: installScriptsAllowed(ctx, requireProject(request.params)) }));
+  app.put('/api/v2/projects/:id/install-scripts', async (request): Promise<{ allowed: boolean }> => {
+    const id = requireProject(request.params);
+    const { allowed } = installScriptsBody.parse(request.body);
+    setInstallScriptsAllowed(ctx, id, allowed);
+    return { allowed };
+  });
 }
