@@ -23,6 +23,19 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   });
 }
 
+for (const width of [1024, 1280, 1366, 1920]) {
+  test(`the header fits at ${width}px and the project picker stays readable`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/#/home');
+    const header = page.getByRole('banner');
+    await expect(header.getByRole('combobox', { name: 'Current project' })).toBeVisible();
+    const fit = await header.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+    const picker = await header.getByRole('combobox', { name: 'Current project' }).boundingBox();
+    expect(picker!.width).toBeGreaterThanOrEqual(110);
+  });
+}
+
 test('Home shows the current project and KPIs that match the API (P2-04)', async ({ page, request }) => {
   const projects = await (await request.get('/api/projects')).json();
   await page.goto('/#/home');

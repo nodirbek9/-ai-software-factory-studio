@@ -8,6 +8,7 @@ import { createStudio, type Studio } from '../src/app.ts';
 import { openDatabase, SCHEMA_VERSION } from '../src/db/database.ts';
 import { localDate } from '../src/db/repositories.ts';
 import { buildUsageSummary } from '../src/readModels/usage.ts';
+import { STUDIO_VERSION } from '../src/version.ts';
 import { createRun, prepareSamples, tempDir } from './helpers.ts';
 
 const studios: Studio[] = [];
@@ -173,7 +174,7 @@ describe('GET /api/v2/system/health', () => {
     expect(byId.api.state).toBe('ok');
     expect(byId.database.state).toBe('ok');
     expect(byId.providers).toMatchObject({ state: 'ok', detail: '1 of 1 usable' }); // fake-ok is the only enabled AI provider
-    expect(health.server.version).toBe('0.1.0');
+    expect(health.server.version).toBe(STUDIO_VERSION);
     expect(health.server.rssBytes).toBeGreaterThan(0);
     expect(health.system.totalMemBytes).toBeGreaterThan(0);
     expect(health.eventClients).toBe(0);
