@@ -76,13 +76,15 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           <div className="hidden text-[11.5px] text-muted xl:block">AI agents · Code · Test · Secure · Ship</div>
         </div>
       </div>
-      <div className="flex min-w-0 items-center gap-3">
+      {/* The picker shrinks (and truncates) instead of spilling its text over the search box on narrow windows. */}
+      <div className="flex min-w-[9rem] shrink items-center gap-3 overflow-hidden">
         <select value={currentProjectId ?? ''} onChange={(e) => void selectProject(e.target.value || null)} aria-label="Current project"
-          className="h-8 max-w-[240px] truncate rounded-md border border-line bg-ink-850 px-2 text-[13px] font-medium focus:border-brand focus:outline-none">
+          title={project?.name}
+          className="h-8 w-full min-w-0 max-w-[240px] truncate rounded-md border border-line bg-ink-850 px-2 text-[13px] font-medium focus:border-brand focus:outline-none">
           {!currentProjectId && <option value="">{projects.length ? 'Select a project' : 'No projects yet'}</option>}
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        {project && <StatusBadge status={project.status} />}
+        {project && <span className="shrink-0"><StatusBadge status={project.status} /></span>}
       </div>
 
       {project && (
@@ -92,7 +94,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         </div>
       )}
       <button type="button" onClick={onOpenPalette} aria-label="Search and commands (Ctrl+K)"
-        className="hidden h-8 min-w-[220px] flex-1 items-center gap-2 rounded-md border border-line bg-ink-950/60 px-2.5 text-left text-[12.5px] text-faint hover:border-brand/50 hover:text-muted lg:flex lg:max-w-[420px]">
+        className="hidden h-8 min-w-[160px] flex-1 items-center gap-2 rounded-md border border-line bg-ink-950/60 px-2.5 text-left text-[12.5px] text-faint hover:border-brand/50 hover:text-muted lg:flex lg:max-w-[420px]">
         <Search size={14} /><span className="flex-1 truncate">Search pages, projects, actions…</span><Kbd>Ctrl</Kbd><Kbd>K</Kbd>
       </button>
       <Metric label="Active agents" value={String(activeAgents)} tone={activeAgents ? 'text-st-running' : undefined} />

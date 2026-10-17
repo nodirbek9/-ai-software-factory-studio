@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Run, RunsPage, RunStatus, SaveWorkflowInput, Workflow, WorkflowGraph, WorkflowSummary } from '@asf/shared';
+import type { Run, RunsListPage, RunsPage, RunStatus, SaveWorkflowInput, Workflow, WorkflowGraph, WorkflowSummary } from '@asf/shared';
 import { STANDARD_WORKFLOW_ID } from '@asf/shared';
 import type { Db } from './database.ts';
 
@@ -108,6 +108,20 @@ export class RunRepository {
         .all(projectId, options.before, limit + 1)) as Row[];
     const runs = rows.slice(0, limit).map(toRun);
     return { runs, nextBefore: rows.length > limit ? runs[runs.length - 1].number : null };
+  }
+
+  /** Runs across projects, newest start first, optionally one project and/or one status; `before` is a startedAt cursor. */
+  listAll(options: { projectId?: string; status?: RunStatus; limit?: number; before?: string } = {}): RunsListPage {
+    const limit = Math.min(Math.max(Math.trunc(options.limit ?? 50) || 1, 1), 200);
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (options.projectId) { where.push('r.project_id = ?'); params.push(options.projectId); }
+    if (options.status) { where.push('r.status = ?'); params.push(options.status); }
+    if (options.before) { where.push('r.started_at < ?'); params.push(options.before); }
+    const sql = `${RUN_SELECT}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY r.started_at DESC, r.number DESC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, limit + 1) as Row[];
+    const runs = rows.slice(0, limit).map(toRun);
+    return { runs, nextBefore: rows.length > limit ? runs[runs.length - 1].startedAt : null };
   }
 
   latestForProject(projectId: string): Run | null {

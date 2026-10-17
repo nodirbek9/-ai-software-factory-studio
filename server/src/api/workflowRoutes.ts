@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { WORKFLOW_LIMITS, WORKFLOW_NODE_TYPES, type RunsPage, type RunTimeline, type ValidationResult, type Workflow, type WorkflowGraph,
+import { WORKFLOW_LIMITS, WORKFLOW_NODE_TYPES, type RunsListPage, type RunsPage, type RunTimeline, type ValidationResult, type Workflow, type WorkflowGraph,
   type WorkflowSummary } from '@asf/shared';
 import type { StudioContext } from '../orchestrator/context.ts';
 import { NODE_CATALOG } from '../workflows/catalog.ts';
@@ -18,6 +18,12 @@ const projectParam = z.object({ id: z.string().uuid() });
 const idParam = z.object({ id: z.string().min(1).max(100) });
 const confirmSchema = z.object({ confirm: z.literal(true) });
 const listQuery = z.object({ projectId: optional(z.string().uuid()) });
+const allRunsQuery = z.object({
+  projectId: optional(z.string().uuid()),
+  status: optional(z.enum(['planning', 'awaiting_approval', 'running', 'paused', 'completed', 'completed_with_failures', 'failed', 'cancelled'])),
+  limit: optional(z.coerce.number().int().min(1).max(200)),
+  before: optional(z.string().datetime()),
+});
 const runsQuery = z.object({
   limit: optional(z.coerce.number().int().min(1).max(50)),
   before: optional(z.coerce.number().int().positive()),
@@ -168,6 +174,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, { ctx, runs }: Work
   }));
   app.get('/api/v2/projects/:id/runs', async (request): Promise<RunsPage> =>
     runs.list(projectParam.parse(request.params).id, runsQuery.parse(request.query)));
+  app.get('/api/v2/runs', async (request): Promise<RunsListPage> => ctx.repos.runs.listAll(allRunsQuery.parse(request.query)));
   app.get('/api/v2/runs/:id', async (request) => ({ run: runs.get(idParam.parse(request.params).id) }));
   app.get('/api/v2/runs/:id/timeline', async (request): Promise<RunTimeline> => runs.timeline(idParam.parse(request.params).id));
   app.post('/api/v2/runs/:id/cancel', async (request) => {
