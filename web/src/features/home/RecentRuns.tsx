@@ -26,7 +26,7 @@ export function RecentRuns({ runs }: { runs: LiveFinished[] }) {
   return (
     <Panel className="flex min-w-0 flex-col overflow-hidden">
       <PanelHeader title="Recent Runs">
-        <button type="button" onClick={() => setView('monitor')} className="rounded text-[12px] text-brand hover:underline">View all →</button>
+        <button type="button" onClick={() => setView('runs')} className="rounded text-[12px] text-brand hover:underline">View all →</button>
       </PanelHeader>
       {runs.length ? (
         <ul className="divide-y divide-line-soft">{runs.map((run) => <RunRow key={run.taskId} run={run} />)}</ul>

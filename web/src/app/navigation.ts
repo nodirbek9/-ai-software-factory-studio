@@ -20,7 +20,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'workspace', label: 'Agent Workspace', icon: Bot, view: 'workspace' },
   { id: 'builder', label: 'Workflow Builder', icon: Workflow, view: 'builder' },
   { id: 'tasks', label: 'Tasks', icon: ListChecks, view: 'tasks', alsoActiveFor: ['workflows'] },
-  { id: 'runs', label: 'Runs', icon: PlayCircle, view: 'monitor' },
+  { id: 'runs', label: 'Runs', icon: PlayCircle, view: 'runs', alsoActiveFor: ['monitor'] },
   { id: 'repos', label: 'Repos', icon: FolderTree, view: 'repos', alsoActiveFor: ['files'] },
   { id: 'quality', label: 'QA & Security', icon: ShieldCheck, view: 'quality' },
   { id: 'logs', label: 'Logs', icon: Activity, view: 'logs' },

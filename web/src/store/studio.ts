@@ -5,13 +5,13 @@ import type {
 } from '@asf/shared';
 import { api, eventsUrl, patch, post, put } from '@/lib/api';
 
-export const VIEWS = ['home', 'dashboard', 'monitor', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models', 'workspace', 'builder', 'tasks', 'repos', 'quality'] as const;
+export const VIEWS = ['home', 'dashboard', 'monitor', 'runs', 'projects', 'agents', 'workflows', 'files', 'logs', 'providers', 'settings', 'models', 'workspace', 'builder', 'tasks', 'repos', 'quality'] as const;
 export type View = (typeof VIEWS)[number];
 
 /** V2 hash slugs per view (#/home, #/tasks, …). The V1 hashes (#/dashboard, #/monitor, …) keep working as aliases;
  *  the V1 Dashboard is the "Project board" (#/board). */
 const VIEW_SLUGS: Record<View, string> = {
-  home: 'home', dashboard: 'board', monitor: 'runs', projects: 'projects', agents: 'agents', workflows: 'task-graph', files: 'files',
+  home: 'home', dashboard: 'board', monitor: 'live', runs: 'runs', projects: 'projects', agents: 'agents', workflows: 'task-graph', files: 'files',
   logs: 'logs', providers: 'providers', settings: 'settings', models: 'models', workspace: 'workspace', builder: 'builder', tasks: 'tasks', repos: 'repos', quality: 'quality',
 };
 const SLUG_VIEWS: Record<string, View> = {

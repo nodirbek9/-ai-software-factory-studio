@@ -277,6 +277,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_findings_project ON findings(project_id, run_id);
   CREATE INDEX idx_findings_run ON findings(run_id, task_id);`,
+  // v6 (V2.2): Logs filter by time across projects; the Runs page lists every project's runs by start time.
+  `CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+  CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);`,
 ];
 
 /** Tables whose foreign keys are verified after a migration (index → tables); a violation rolls the migration back. */

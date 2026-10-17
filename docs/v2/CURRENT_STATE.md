@@ -1,12 +1,22 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 (Opus 5.5, account 1): **V2.1 is live** — `v2.0.0` (cut-over) plus V2.1 (terminals, install-
-script policy, lighter snapshot, security fixes; `docs/v2/phases/V2_1.md`, tag `v2.1.0`), running on port 4317 with the
-real data (schema 5). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`. `main` lives in
+Last updated: 2026-10-17 (Opus 5.5, account 1): **V2.2 is live** — `v2.0.0` (cut-over), V2.1 (terminals, install-
+script policy, lighter snapshot, security fixes; `docs/v2/phases/V2_1.md`) and V2.2 (every-button audit, Runs page,
+project Files tab, lifecycle log, v6 indexes; `docs/v2/phases/V2_2.md`, tag `v2.2.0`), running on port 4317 with the
+real data (schema 6). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`. `main` lives in
 `D:\jarvis 2\ai-software-factory-studio`; new work goes on a feature branch in the dev worktree `D:\jarvis 2\asf-v2`
 (ports 4327/5327, own data).
 
 ## Owner report (Uzbek)
+
+**V2.2 (2026-10-17).** Butun studiya tekshirildi va oxirgi bosqichlar tugatildi:
+- Avtomatik audit 15 sahifadagi har bir tugma, tab va menyuni (ochilgan oynalar ichidagilarini ham) bosib chiqdi:
+  319 ta bosish, 0 ta xato. Bu vaqtinchalik test bazasida qilindi, sizning ma'lumotlaringizga tegilmadi.
+- Tuzatildi: tor oynada sarlavhadagi loyiha nomi qidiruv maydoni ustiga chiqib ketardi.
+- Studiya bir marta to'xtab qolgani aniqlandi (xato emas, oyna yopilgan yoki Ctrl+C bosilgan). Endi sababi
+  `data/logs/lifecycle.log` ga yoziladi.
+- Yangi: **Runs sahifasi** (barcha loyihalar run'lari, filtrlar, har bir run tafsiloti, Live tab), loyiha sahifasida
+  **Files** tabi, Logs va Runs uchun baza indekslari.
 
 **V2.1 (2026-10-17).** Ruxsatingiz bilan qolgan ishlar bajarildi:
 - **Terminal (Phase 3c):** Agent Workspace'da edit sessiyaning "Terminal" tabida PowerShell ochiladi (faqat shu

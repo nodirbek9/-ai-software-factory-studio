@@ -58,6 +58,14 @@ describe('CommandPalette', () => {
     expect(screen.getByText('No matching commands')).toBeTruthy();
   });
 
+  it('opens run history from Runs', () => {
+    const { input } = openPalette();
+    fireEvent.change(input, { target: { value: 'Runs' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(useStudio.getState().view).toBe('runs');
+    expect(window.location.hash).toBe('#/runs');
+  });
+
   it('moves the active option with the arrow keys', () => {
     const { input } = openPalette();
     const selected = () => screen.getAllByRole('option').findIndex((option) => option.getAttribute('aria-selected') === 'true');

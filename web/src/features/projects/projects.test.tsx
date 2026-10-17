@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { ProjectSnapshot, RepoOverview, Run, RunsPage, Task, WorkflowSummary } from '@asf/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api';
+import { installFetchMock } from '@/test/fetchMock';
 import ProjectDetail from '@/pages/ProjectDetail';
 import Repos from '@/pages/Repos';
 import { useStudio } from '@/store/studio';
@@ -306,6 +307,14 @@ describe('ProjectDetail tabs', () => {
     await tab('Settings');
     expect(screen.getByText('npm run check')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('Files: lists the project files from the API (V2.2)', async () => {
+    setup();
+    installFetchMock({ 'GET /api/projects/project-1/files': [{ path: 'src/app.ts', type: 'file', size: 12 }] });
+    await openDetail();
+    await tab('Files');
+    expect(await screen.findByText('app.ts')).toBeTruthy();
   });
 
   it('Settings: install scripts are blocked until the owner confirms allowing them (P7-S8)', async () => {

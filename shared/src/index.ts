@@ -772,6 +772,13 @@ export interface RunsPage {
   nextBefore: number | null;
 }
 
+/** Runs of every project, newest start first (`GET /api/v2/runs`, Runs page). */
+export interface RunsListPage {
+  runs: Run[];
+  /** Pass as `before` (a run's startedAt) for the next page; null at the end. */
+  nextBefore: string | null;
+}
+
 export interface RunNodeStatus {
   nodeId: string;
   taskKeys: string[];

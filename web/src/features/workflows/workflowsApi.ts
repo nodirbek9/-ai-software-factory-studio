@@ -2,6 +2,8 @@ import type {
   NodeCatalogEntry,
   Run,
   RunsPage,
+  RunsListPage,
+  RunStatus,
   RunTimeline,
   SaveWorkflowInput,
   SimulationResult,
@@ -77,6 +79,15 @@ export function listRuns(projectId: string, before?: number): Promise<RunsPage> 
 
 export function getRunTimeline(runId: string): Promise<RunTimeline> {
   return api<RunTimeline>(`/api/v2/runs/${enc(runId)}/timeline`);
+}
+
+export function listAllRuns(params: { projectId?: string; status?: RunStatus; limit?: number; before?: string } = {}): Promise<RunsListPage> {
+  const query = new URLSearchParams();
+  if (params.projectId) query.set('projectId', params.projectId);
+  if (params.status) query.set('status', params.status);
+  if (params.limit !== undefined) query.set('limit', String(params.limit));
+  if (params.before) query.set('before', params.before);
+  return api<RunsListPage>(`/api/v2/runs${query.size ? `?${query}` : ''}`);
 }
 
 export function cancelRun(runId: string): Promise<unknown> {
