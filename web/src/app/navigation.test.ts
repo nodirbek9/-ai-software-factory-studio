@@ -37,6 +37,13 @@ describe('navigation model', () => {
     expect(NAV_ITEMS.filter((item) => item.view === null)).toEqual([]);
     expect(NAV_ITEMS.find((item) => item.id === 'quality')?.view).toBe('quality');
   });
+
+  it('opens run history and highlights Runs for the live monitor too', () => {
+    const runs = NAV_ITEMS.find((item) => item.id === 'runs')!;
+    expect(runs.view).toBe('runs');
+    expect(isActive(runs, 'runs')).toBe(true);
+    expect(isActive(runs, 'monitor')).toBe(true);
+  });
 });
 
 describe('hash routing', () => {
@@ -52,7 +59,7 @@ describe('hash routing', () => {
   });
 
   it.each<[string, View]>([
-    ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'monitor'], ['#/tasks', 'tasks'], ['#/task-graph', 'workflows'],
+    ['#/home', 'home'], ['#/board', 'dashboard'], ['#/runs', 'runs'], ['#/live', 'monitor'], ['#/tasks', 'tasks'], ['#/task-graph', 'workflows'],
     ['#/repos', 'repos'], ['#/models', 'models'], ['#/workspace', 'workspace'], ['#/builder', 'builder'],
   ])('resolves the V2 slug %s', (hash, view) => {
     expect(viewFromHash(hash)).toBe(view);
@@ -69,6 +76,8 @@ describe('hash routing', () => {
   it('writes #/board for the Project board and #/home for Home', () => {
     expect(hashForView('dashboard')).toBe('#/board');
     expect(hashForView('home')).toBe('#/home');
+    expect(hashForView('monitor')).toBe('#/live');
+    expect(hashForView('runs')).toBe('#/runs');
   });
 
   it('falls back to Home for unknown or empty hashes', () => {

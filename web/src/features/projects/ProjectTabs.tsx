@@ -7,6 +7,7 @@ import { activeRunOf } from '@/features/workflows/workflowsStore';
 import { RunStatusPill, formatCost, formatMs } from '@/features/workflows/RunPanel';
 import { cn, formatDuration, timeAgo } from '@/lib/utils';
 import { useStudio } from '@/store/studio';
+import { ProjectFiles } from '@/pages/Files';
 import { getInstallScripts, getReport, setInstallScripts } from './projectsApi';
 
 export const PROJECT_TABS = [
@@ -16,6 +17,7 @@ export const PROJECT_TABS = [
   { id: 'plan', label: 'Plan' },
   { id: 'runs', label: 'Runs' },
   { id: 'tasks', label: 'Tasks' },
+  { id: 'files', label: 'Files' },
   { id: 'report', label: 'Report' },
   { id: 'settings', label: 'Settings' },
 ] as const;
@@ -404,6 +406,7 @@ function TabBody({ snapshot, run, runs, tab }: Omit<ProjectTabsProps, 'onTabChan
     case 'plan': return <PlanTab tasks={snapshot.tasks} run={run} />;
     case 'runs': return <RunsTab state={runs} />;
     case 'tasks': return <TasksTab project={project} tasks={runTasks(snapshot.tasks, run)} />;
+    case 'files': return <ProjectFiles key={project.id} snapshot={snapshot} />;
     case 'report': return <ReportTab projectId={project.id} refreshKey={project.updatedAt} />;
     case 'settings': return <SettingsTab project={project} />;
   }

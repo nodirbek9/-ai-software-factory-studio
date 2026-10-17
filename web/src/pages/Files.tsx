@@ -51,7 +51,7 @@ function formatSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ProjectFiles({ snapshot }: { snapshot: ProjectSnapshot }) {
+export function ProjectFiles({ snapshot }: { snapshot: ProjectSnapshot }) {
   const { project, tasks } = snapshot;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
   const [entries, setEntries] = useState<FileEntry[]>([]);

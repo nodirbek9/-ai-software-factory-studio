@@ -46,6 +46,13 @@ describe('Sidebar', () => {
     expect(builder.getAttribute('aria-current')).toBe('page');
   });
 
+  it('opens run history from Runs', () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }));
+    expect(useStudio.getState().view).toBe('runs');
+    expect(window.location.hash).toBe('#/runs');
+  });
+
   it('opens the Agent Workspace page', () => {
     render(<Sidebar />);
     const workspace = screen.getByRole('button', { name: 'Agent Workspace' });
