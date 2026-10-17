@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AGENT_ROLES, AGENT_ROLE_INFO, EFFORT_LEVELS, type AgentRole, type AgentSession, type CreateSessionInput, type EffortLevel, type ProviderInfo } from '@asf/shared';
+import { AGENT_ROLES, AGENT_ROLE_INFO, EFFORT_LEVELS, type AgentRole, type AgentSession, type CreateSessionInput, type EffortLevel, type ProviderInfo, type Task } from '@asf/shared';
 import { Button, Dialog, Field, Input, Select } from '@/components/ui/primitives';
 import { cn } from '@/lib/utils';
 import { useStudio } from '@/store/studio';
@@ -7,6 +7,9 @@ import { useSessions } from './sessionsStore';
 
 /** Roles that review or plan default to read-only; roles that write code default to their own worktree. */
 export const EDIT_BY_DEFAULT: ReadonlySet<AgentRole> = new Set<AgentRole>(['backend', 'frontend', 'qa']);
+
+/** Stable empty list: a selector returning a fresh `[]` re-renders forever while no snapshot is loaded (React #185). */
+const NO_TASKS: Task[] = [];
 
 const usable = (provider: ProviderInfo) => provider.enabled && provider.available;
 
@@ -24,7 +27,7 @@ interface Props {
 function Form({ onCreated, onClose }: { onCreated: (session: AgentSession) => void; onClose: () => void }) {
   const providers = useStudio((s) => s.providers);
   const agentConfigs = useStudio((s) => s.agentConfigs);
-  const tasks = useStudio((s) => s.snapshot?.tasks ?? []);
+  const tasks = useStudio((s) => s.snapshot?.tasks ?? NO_TASKS);
 
   const initialRole: AgentRole = 'backend';
   const pick = (role: AgentRole) => {

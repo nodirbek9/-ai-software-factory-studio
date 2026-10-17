@@ -1,24 +1,19 @@
 # V2 — Next actions (in order)
 
 Work in `D:\jarvis 2\asf-v2` (branch `feature/v2-studio`). Read `docs/v2/CURRENT_STATE.md` first.
-Phases 0–6 are done and committed (last: `7859975`). What is left needs the owner or is Phase 7.
+Phases 0–7 are done and committed. Everything left needs the owner, or is a follow-up listed below.
 
-## 1. Browser check (owner present, or preview start allowed)
-Start `asf-v2-api` + `asf-v2-web` (or `start-v2-dev.cmd`), V2 data only, agents on the offline Scripted provider.
-Check with the scripted sample project: Workspace (6–8 panels, send to two sessions, reorder, reload), Workflow Builder
-(open Standard → Duplicate → edit → Validate → Simulate → Run; live node status; cancel), Tasks (board/list/drawer/diff),
-Project detail tabs, Repos, QA & Security (gates, findings after a security FAIL sample, Create fix task, audit approval),
-Logs (filters, live tail, export), Models (Usage, Fallback). Fix what breaks, gates, commit.
+## 1. Owner decisions (ask, never assume)
+1. **Merge into `main` + tag `v2.0.0` + cut-over** — MIGRATION_PLAN.md step D. Before it: V1 idle check
+   (`GET http://127.0.0.1:4317/api/live` → `running: []`), fresh backup, then merge `--no-ff`, `npm install`, gates,
+   start `start-studio.cmd`, smoke (Home, projects, one Scripted sample run). Rollback = WINDOWS_LAUNCH.md.
+2. Until the cut-over: **restart V1** so the Phase 0b fixes apply (V1 still runs pre-0b code).
+3. **Phase 3c PTY terminal** (D-019, native dependency) — yes/no.
+4. **P7-S8**: package install scripts in workflow tool nodes — add project trust / `--ignore-scripts`?
 
-## 2. Owner decisions
-- Phase 3c PTY terminal (D-019, native dependency) — yes/no.
-- Phase 7 merge into `main` and the `v2.0.0` tag — only with the owner's "ha".
-
-## 3. Phase 7 — stabilization (`IMPLEMENTATION_PHASES.md`)
-1. Playwright E2E against a temp-data test server with the Scripted provider (D-017) for every main flow.
-2. Independent security review of Phases 3–6 (worker, then Opus final authority): new routes (`workflowRoutes`,
-   `v2WorkRoutes`, `qualityRoutes`, session routes), audit approval path, findings redaction, task diff sensitive-file filter.
-3. Performance check vs `PERFORMANCE_BASELINE.md` (initial JS ≤ 160 KB gzip — index chunk is ~109 KB gzip now).
-4. Migration validation on a fresh copy of the real V1 DB with the scheduler disabled (rehearsal already passed twice).
-5. Close the gaps listed in CURRENT_STATE "Open items" that are cheap (Runs page, Files tab, events index).
-6. Docs: README/HANDOFF for V2, Windows launch guide, rollback drill.
+## 2. Follow-ups (no owner decision needed, normal worker pipeline)
+1. Payload target (≤ 150 KB): the V2 shell still loads the V1 project snapshot (`/api/projects/:id`, up to 701 KB on
+   the real DB); move the pages that need it to summary endpoints, keep V1 Dashboard/Monitor working.
+2. Runs page `#/runs` (UI spec §6), Project detail Files tab, `events(created_at)` index, coverage scanner.
+3. Re-run `npm run test:e2e`, `scripts/migration-rehearsal.mts` and `scripts/rollback-drill.mts` right before the
+   cut-over (PHASE_7.md §1, §4, §5).

@@ -54,6 +54,18 @@ function isInside(child: string, parent: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+/** The first `limit` bytes of a file without reading the rest into memory (P7-S7). */
+export function readHead(file: string, limit: number): { bytes: Buffer; truncated: boolean } {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(limit + 1);
+    const read = fs.readSync(fd, buffer, 0, limit + 1, 0);
+    return { bytes: buffer.subarray(0, Math.min(read, limit)), truncated: read > limit };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function realpathOrSelf(p: string): string {
   try {
     return fs.realpathSync.native(p);
@@ -419,12 +431,20 @@ export class WorkspaceManager {
 
   readFile(root: string, relativePath: string): { content: string; truncated: boolean; binary: boolean } {
     const full = this.resolveInside(root, relativePath);
-    if (isSensitivePath(relativePath)) throw new SensitiveFileError(`${relativePath} may contain secrets, so the studio does not show it`);
+    if (this.isSensitiveTarget(root, relativePath, full)) {
+      throw new SensitiveFileError(`${relativePath} may contain secrets, so the studio does not show it`);
+    }
     if (!fs.existsSync(full) || !fs.statSync(full).isFile()) throw new WorkspaceError(`File not found: ${relativePath}`);
-    const buffer = fs.readFileSync(full);
-    const slice = buffer.subarray(0, MAX_READ_BYTES);
-    if (slice.includes(0)) return { content: '', truncated: false, binary: true };
-    return { content: slice.toString('utf8'), truncated: buffer.length > MAX_READ_BYTES, binary: false };
+    const { bytes, truncated } = readHead(full, MAX_READ_BYTES);
+    if (bytes.includes(0)) return { content: '', truncated: false, binary: true };
+    return { content: bytes.toString('utf8'), truncated, binary: false };
+  }
+
+  /** True when the path or, through an in-root symlink, the file it points to is a sensitive file (P7-S3). */
+  isSensitiveTarget(root: string, relativePath: string, full: string): boolean {
+    if (isSensitivePath(relativePath)) return true;
+    const target = realpathOrSelf(full);
+    return target !== path.resolve(full) && isSensitivePath(path.relative(realpathOrSelf(root), target));
   }
 
   private async initRepo(dir: string): Promise<void> {

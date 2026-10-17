@@ -138,6 +138,14 @@ describe('New Session dialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('opens while the project snapshot is not loaded yet (no render loop, found by the Phase 7 E2E)', async () => {
+    useStudio.setState({ snapshot: null });
+    await openWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New session' });
+    expect((within(dialog).getByRole('button', { name: 'Create session' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('defaults read-only roles to Read-only and sends the chosen model and effort', async () => {
     const network = await openWorkspace({ extra: { 'POST /api/v2/projects/project-1/sessions': sessionFixture({ id: 's3', role: 'architect' }), [`GET ${TURNS('s3')}`]: [] } });
     fireEvent.click(screen.getByRole('button', { name: 'New Session' }));

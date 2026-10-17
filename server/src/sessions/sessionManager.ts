@@ -112,10 +112,17 @@ are true duplicates. Change nothing else. When done, reply with a one-paragraph 
 }
 
 /** A unified "new file" diff for an untracked file (git diff does not show those). */
+const newFileHeader = (file: string) => `diff --git a/${file} b/${file}\nnew file mode 100644`;
+
+/** Checked from the file size before reading, so a huge untracked file is never loaded (P7-S7). */
+function tooLargeFileDiff(file: string, size: number): string {
+  return `${newFileHeader(file)}\n(new file, ${size} bytes — too large to show)`;
+}
+
 function newFileDiff(file: string, content: Buffer): string {
-  const header = `diff --git a/${file} b/${file}\nnew file mode 100644`;
+  const header = newFileHeader(file);
   if (content.subarray(0, 8000).includes(0)) return `${header}\nBinary files /dev/null and b/${file} differ`;
-  if (content.length > MAX_NEW_FILE_DIFF_BYTES) return `${header}\n(new file, ${content.length} bytes — too large to show)`;
+  if (content.length > MAX_NEW_FILE_DIFF_BYTES) return tooLargeFileDiff(file, content.length);
   const text = content.toString('utf8');
   if (!text) return header;
   const body = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n');
@@ -360,7 +367,9 @@ export class SessionManager {
     if (session.mode !== 'edit') throw new SessionError('Only edit sessions have a worktree to discard', 409);
     return this.withAction(session, 'discard', async () => {
       const project = this.project(session.projectId);
-      if (this.worktreeOf(session)) await this.saveWip(session, 'work kept when the worktree was discarded');
+      const save = this.worktreeOf(session) ? await this.saveWip(session, 'work kept when the worktree was discarded') : { saved: true };
+      // A failed save keeps the worktree: removing it would lose the uncommitted work (R7, P7-S2).
+      if (!save.saved) throw new SessionError("Could not commit the worktree's changes, so it was kept; see the session log", 409);
       if (session.worktreePath) await this.ctx.workspace.removeWorktree(project, session.worktreePath);
       const discarded = this.ctx.repos.sessions.update(sessionId, { worktreePath: null, lastActivityAt: now() });
       this.emit(discarded, 'session.discarded', `${label(discarded)}: worktree removed; branch ${discarded.branch} is kept`,
@@ -427,12 +436,17 @@ export class SessionManager {
       parts.push(chunk.replace(/\n+$/, ''));
     }
     const untracked = (await git(worktree, ['ls-files', '-z', '--others', '--exclude-standard'])).split('\0').filter(Boolean).sort();
+    let size = parts.reduce((sum, part) => sum + part.length, 0);
     for (const file of untracked) {
       if (isSensitivePath(file)) continue;
+      if (size > MAX_DIFF_CHARS) break; // the budget is spent: later files would be cut off anyway (P7-S7)
       try {
         const full = this.ctx.workspace.resolveInside(worktree, file);
-        if (!fs.statSync(full).isFile()) continue;
-        parts.push(newFileDiff(file, fs.readFileSync(full)));
+        const stat = fs.statSync(full);
+        if (!stat.isFile() || this.ctx.workspace.isSensitiveTarget(worktree, file, full)) continue;
+        const part = stat.size > MAX_NEW_FILE_DIFF_BYTES ? tooLargeFileDiff(file, stat.size) : newFileDiff(file, fs.readFileSync(full));
+        parts.push(part);
+        size += part.length + 1;
         files.push(file);
       } catch {
         // unreadable or unsafe path: leave it out of the diff
@@ -749,19 +763,19 @@ export class SessionManager {
     return { commit, files: commit ? files : [] };
   }
 
-  /** Commits whatever is in the worktree (an interrupted turn, a discard); never throws. */
-  private async saveWip(session: StoredSession, what: string): Promise<string | null> {
+  /** Commits whatever is in the worktree (an interrupted turn, a discard); never throws. `saved` is false only on failure. */
+  private async saveWip(session: StoredSession, what: string): Promise<{ saved: boolean; commit?: string }> {
     const worktree = this.worktreeOf(session);
-    if (!worktree) return null;
+    if (!worktree) return { saved: true };
     try {
       if (await git(worktree, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], true)) await git(worktree, ['merge', '--abort'], true);
       const commit = await this.ctx.workspace.commit(worktree, `wip(session-${session.number}): ${what}`);
       if (commit) this.emit(session, 'session.partial', `${label(session)}: saved the worktree's changes on ${session.branch} (${commit.slice(0, 8)})`, { commit }, 'warn');
-      return commit;
+      return { saved: true, commit: commit ?? undefined };
     } catch (error) {
       this.emit(session, 'session.partial', `${label(session)}: could not save the worktree's changes (${errorText(error)}); the worktree is kept at ${worktree}`,
         { worktreePath: worktree }, 'error');
-      return null;
+      return { saved: false };
     }
   }
 

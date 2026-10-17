@@ -1,8 +1,22 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 ~05:40 (Opus 5.5, account 1, automated run asf-v2-continue-0540: gates re-verified only).
+Last updated: 2026-10-17 (Opus 5.5, account 1, owner session "davom et"): Phase 7 done.
 
 ## Owner report (Uzbek)
+
+**Phase 7 (2026-10-17, kunduzgi ish) — barqarorlashtirish tugadi.** Batafsil: `docs/v2/phases/PHASE_7.md`.
+- Brauzerda tekshiruv qilindi: barcha sahifalar ochiladi, eski konsol xatolari takrorlanmadi.
+- Playwright E2E (Edge, vaqtinchalik ma'lumot, faqat Scripted provider): 11 ta test — navigatsiya, Home, to'liq ish
+  jarayoni (reja → tasdiq → run), Tasks, QA, Logs, Workspace (6 panel, 2 sessiya), Builder (run), unumdorlik.
+- E2E haqiqiy xato topdi: yangi loyihada "New Session" oynasi cheksiz qayta chizilardi va "Create session" ishlamasdi.
+  Tuzatildi, regression test qo'shildi.
+- Mustaqil xavfsizlik tekshiruvi (GPT-6-Astra): 5 HIGH, 4 MEDIUM. Opus har birini kodda tasdiqladi; 8 tasi tuzatildi
+  va testlar bilan yopildi (GPT-6.1-Sol yozdi). P7-S8 (npm install skriptlari) sizning qaroringizni kutadi.
+- Unumdorlik: boshlang'ich JS 116 KB gzip (maqsad ≤160), server 123 MB, Home heap 6 MB, 8 panel → 0 jarayon.
+  Ochiq: eng katta API javobi 701 KB (V1 loyiha snapshot'i, maqsad ≤150 KB).
+- Haqiqiy V1 bazasi nusxasida migratsiya (3-marta) va rollback mashqi: ikkalasi OK, V1 papkasiga tegilmadi.
+- Testlar: server 235 (+1 skip: Windows'da symlink ruxsati yo'q), web 487, E2E 11 — hammasi o'tdi.
+
 
 **05:40 qayta tekshiruv (asf-v2-continue-0540):** Phase 0–6 allaqachon tugagan, yangi kod yozilmadi.
 `npm run typecheck`, `npm run build`, `npm test` qayta ishga tushirildi — hammasi yashil (server 228, web 486).
@@ -65,12 +79,12 @@ Working tree toza, boshqa worker jarayonlari ishlamayapti. Quyidagi hisobot hali
   (P4-1..P4-7 also in DECISIONS.md), `PHASE_5.md` (P5-1..P5-4), `PHASE_6.md` (P6-1..P6-8).
 - Schema: migrations index 0–4 (`schema_version` 5): v4 = workflows/runs/tasks per run, v5 = findings. Rehearsed on a
   copy of the real V1 DB (88 tasks, 7 runs, FK clean); the runner writes `data/backups/studio-before-v<N>.db` first.
-- Gates at `7859975`: `npm run typecheck`, `npm run build`, `npm test` (228 server + 486 web) green.
+- Gates after Phase 7: `npm run typecheck`, `npm run build`, `npm test` (235 server + 1 skipped, 487 web), `npm run test:e2e` (11) green.
 - Owner (2026-10-16 23:35): continue through the phases; commits on `feature/v2-studio` approved. Never: merge to `main`,
   push, restart V1, paid APIs, global installs.
 
 ## Open items / known gaps
-- **Browser checks not done** for Phases 3–6 (the automated run's preview start was declined). Do them first in Phase 7.
+- Browser checks: done in Phase 7 (manual pass + Playwright E2E).
 - Runs page `#/runs` still maps to the V1 Monitor; run history is in the Builder's bottom panel and the Project detail
   Runs tab. A dedicated Runs page (UI spec §6) is not built.
 - Project detail: no Files tab (V1 Files page is at `#/files`); Settings tab omits the trust flag (not on `Project`).
@@ -80,7 +94,7 @@ Working tree toza, boshqa worker jarayonlari ishlamayapti. Quyidagi hisobot hali
 - Repo overview caps branches at 300 without a "truncated" flag.
 - Events table has no `created_at` index; add one if Logs gets slow on large DBs.
 - Logs live tail matches run/session filters only when the SSE event carries `data.runId` / `data.sessionId`.
-- Independent (non-Opus) review of Phases 4–6 not run yet — Opus reviewed the diffs; plan it in Phase 7.
+- Independent security review: done in Phase 7 (P7-S1…S9, PHASE_7.md §2).
 
 ## Follow-ups noted
 - Verify whether Codex, Antigravity and Gemini CLIs load project-level config from a repository (S1 note).

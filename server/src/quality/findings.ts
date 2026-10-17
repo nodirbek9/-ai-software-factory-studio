@@ -143,9 +143,14 @@ function parseBullets(text: string): ParsedFinding[] {
 
 /** Findings of an agent reply: the last ```asf-findings JSON block, else the V1 bullet lines; [] when there are none. */
 export function parseFindings(text: string): ParsedFinding[] {
+  return parseFindingsReport(text).findings;
+}
+
+/** parseFindings plus whether the reply carried an `asf-findings` block that is not valid JSON findings. */
+export function parseFindingsReport(text: string): { findings: ParsedFinding[]; malformed: boolean } {
   const block = lastFindingsBlock(text);
   const fromBlock = block === null ? null : parseBlock(block);
-  return fromBlock ?? parseBullets(text);
+  return { findings: fromBlock ?? parseBullets(text), malformed: block !== null && fromBlock === null };
 }
 
 /** Identity of a finding across re-runs: lower-case `source|file|title`, whitespace collapsed. */
@@ -154,9 +159,20 @@ export function fingerprintOf(f: { source: FindingSource; file: string | null; t
 }
 
 /** Stores the findings a security/review task reported (P6-1 re-run semantics) and announces the change. */
-export function ingestTaskFindings(ctx: StudioContext, task: Task, text: string, source: 'security' | 'review'): Finding[] {
+export function ingestTaskFindings(ctx: StudioContext, task: Task, text: string, source: 'security' | 'review',
+  verdict: 'pass' | 'fail' | null = null): Finding[] {
+  const report = parseFindingsReport(text);
+  // Re-run semantics close earlier findings that are not reported again, so only a reliable report may do that: a
+  // malformed findings block, or a FAIL verdict with no finding parsed, keeps the earlier findings as they are (P7-S5).
+  const unreliable = report.malformed ? 'its findings block is not valid JSON'
+    : verdict === 'fail' && report.findings.length === 0 ? 'it failed without a finding the studio could read' : null;
+  if (unreliable) {
+    ctx.events.emit({ projectId: task.projectId, taskId: task.id, role: task.role, type: 'findings.error', level: 'warn',
+      message: `Kept the earlier ${source} findings: ${unreliable}`, data: { runId: task.runId, taskId: task.id } });
+    return [];
+  }
   const findings = ctx.repos.findings.replaceForTask({
-    projectId: task.projectId, runId: task.runId, taskId: task.id, source, findings: parseFindings(text),
+    projectId: task.projectId, runId: task.runId, taskId: task.id, source, findings: report.findings,
   });
   ctx.events.emit({ projectId: task.projectId, taskId: task.id, role: task.role, type: 'findings.updated', level: 'info',
     message: `${findings.length} ${source} finding(s) recorded`, data: { runId: task.runId, taskId: task.id, count: findings.length } });

@@ -32,9 +32,13 @@ export async function git(cwd: string, args: string[], allowFailure = false): Pr
   if (sub === 'merge' && args.includes('--abort') === false && !args.includes('--no-ff')) {
     throw new GitError('merges must use --no-ff');
   }
+  // A repository's own config must not run programs on a read: no external diff drivers or textconv filters (P7-S1),
+  // no fsmonitor hook on status/diff.
+  const safeArgs = sub === 'diff' || sub === 'show' ? [sub, '--no-ext-diff', '--no-textconv', ...args.slice(1)] : args;
   const result = await runProcess('git', {
     cwd,
-    args: ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', '-c', 'core.longpaths=true', '-c', `core.hooksPath=${NO_HOOKS_DIR}`, ...args],
+    args: ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', '-c', 'core.longpaths=true', '-c', `core.hooksPath=${NO_HOOKS_DIR}`,
+      '-c', 'core.fsmonitor=false', ...safeArgs],
     env: GIT_ENV,
     timeoutMs: 120_000,
   });

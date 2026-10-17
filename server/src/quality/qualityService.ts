@@ -71,9 +71,14 @@ function verdictState(task: Task): TaskState {
   return { task, state: 'error', detail: clip(`${task.key}: ${task.error ?? 'failed'}`) };
 }
 
-function auditGate(run: Run, audit: LastAudit | null): QualityGate {
+function auditGate(run: Run, tasks: Task[], audit: LastAudit | null): QualityGate {
   if (!audit || Date.parse(audit.at) < Date.parse(run.startedAt)) {
     return gate('audit', 'not_run', 'No npm audit since this run started (it needs your approval: network access)');
+  }
+  // An audit only speaks for the code it saw: code changed by this run after it makes it stale (P7-S9).
+  const changedAt = latestFinish(tasks.filter((t) => t.kind === 'implement' && t.status === 'completed'));
+  if (changedAt && Date.parse(audit.at) < Date.parse(changedAt)) {
+    return gate('audit', 'not_run', "The last npm audit is older than this run's latest code change; run it again", null, audit.at);
   }
   if (!audit.ok) return gate('audit', 'error', clip(`npm audit failed: ${audit.error ?? 'unknown error'}`), null, audit.at);
   const { critical, high, medium, low, info } = audit.counts;
@@ -145,7 +150,7 @@ export class QualityService implements AuditStarter {
       combine('tests', ofKind('test').map(testState), 'No test task in this run'),
       combine('security', ofKind('security').map(verdictState), 'No security review in this run'),
       combine('review', ofKind('review').map(verdictState), 'No code review in this run'),
-      auditGate(run, audit),
+      auditGate(run, tasks, audit),
       gate('coverage', 'not_run', 'No coverage scanner is configured yet, so no run is marked ready'),
     ];
     const blockingFindings = this.ctx.repos.findings.listByRun(run.id)
