@@ -1,10 +1,22 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 (Opus 5.5, account 1): **V2 is live** — merged into `main` (`b2691fc`, tag `v2.0.0`) and
-running on port 4317 with the real data (schema 5). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`.
-This folder (`ai-software-factory-studio`) is now where V2 work happens; `D:\jarvis 2\asf-v2` is the old, merged worktree.
+Last updated: 2026-10-17 (Opus 5.5, account 1): **V2.1 is live** — `v2.0.0` (cut-over) plus V2.1 (terminals, install-
+script policy, lighter snapshot, security fixes; `docs/v2/phases/V2_1.md`, tag `v2.1.0`), running on port 4317 with the
+real data (schema 5). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`. `main` lives in
+`D:\jarvis 2\ai-software-factory-studio`; new work goes on a feature branch in the dev worktree `D:\jarvis 2\asf-v2`
+(ports 4327/5327, own data).
 
 ## Owner report (Uzbek)
+
+**V2.1 (2026-10-17).** Ruxsatingiz bilan qolgan ishlar bajarildi:
+- **Terminal (Phase 3c):** Agent Workspace'da edit sessiyaning "Terminal" tabida PowerShell ochiladi (faqat shu
+  sessiyaning o'z worktree'sida, ko'pi bilan 2 ta, 15 daqiqa siz hech narsa yozmasangiz yopiladi).
+- **npm install skriptlari:** standart holatda bloklangan; kerak bo'lsa Project → Settings → "Allow scripts".
+- **Loyiha ma'lumoti yengillashdi:** eng katta javob 701 KB → 273 KB.
+- **Mustaqil xavfsizlik tekshiruvi** (GPT-6-Astra) 2 ta CRITICAL topdi. Biri V1 dan qolgan eski zaiflik edi
+  (`http://...` ko'rinishidagi so'rov tekshiruvlarni chetlab o'tardi) — tuzatildi va test bilan isbotlandi. Ikkinchisi
+  (tokensiz lokal jarayonlar) qolgan xavf sifatida qabul qilindi: shu kompyuterda sizning nomingizdan ishlaydigan
+  jarayon PowerShell'ni baribir o'zi ocha oladi. Qolgan 7 tasi tuzatildi.
 
 **Cut-over (2026-10-17) — V2 ishga tushdi.** Sizning "ha" ingiz bilan: V1 bo'shligi tekshirildi (0 ta ish), V1
 to'xtatildi, yakuniy zaxira olindi (`D:\jarvis 2\backups\asf-v1-final-2026-10-17\`), `feature/v2-studio` `main` ga
