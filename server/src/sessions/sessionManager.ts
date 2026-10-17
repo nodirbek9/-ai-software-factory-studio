@@ -12,6 +12,7 @@ import { getSettings, type StudioContext } from '../orchestrator/context.ts';
 import type { ProcessSlotRelease } from '../orchestrator/processBudget.ts';
 import { ProjectError } from '../orchestrator/projectService.ts';
 import { approvedCommands, filesWithConflictMarkers, integrateBranch, type ConflictResolver } from '../orchestrator/taskRunners.ts';
+import { installScriptsAllowed } from '../security/installScripts.ts';
 import { redact } from '../security/redact.ts';
 import { isSensitivePath } from '../security/sensitiveFiles.ts';
 import { isAllowedCommand, runAllowedCommand } from '../workspace/commandRunner.ts';
@@ -398,7 +399,8 @@ export class SessionManager {
       if (!cwd) throw new SessionError('The worktree of this session was discarded', 409);
       const output = this.outputStream(session, 'tests');
       this.emit(session, 'session.tests', `${label(session)}: running ${command}`, { command, state: 'started' });
-      const run = (): Promise<TestResult> => runAllowedCommand(command, cwd, { signal, approved, onOutput: (chunk) => output.push(chunk),
+      const run = (): Promise<TestResult> => runAllowedCommand(command, cwd, { signal, approved, allowInstallScripts: installScriptsAllowed(this.ctx, project.id),
+        onOutput: (chunk) => output.push(chunk),
         timeoutMs: getSettings(this.ctx).taskTimeoutMinutes * 60_000 });
       let result: TestResult;
       try {

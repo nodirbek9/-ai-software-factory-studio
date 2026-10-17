@@ -1,4 +1,5 @@
 import type { TestResult } from '@asf/shared';
+import { guardInstallScripts } from '../security/installScripts.ts';
 import { redact } from '../security/redact.ts';
 import { commandEnv, runProcess } from './processRunner.ts';
 
@@ -66,9 +67,10 @@ export function summarizeTestOutput(raw: string): string {
 }
 
 export async function runAllowedCommand(command: string, cwd: string, options: { signal?: AbortSignal; timeoutMs: number; approved?: boolean;
-  onOutput?: (chunk: string) => void }): Promise<TestResult> {
+  /** Package installs run with --ignore-scripts unless this is true (the project's owner setting, P7-S8). */
+  allowInstallScripts?: boolean; onOutput?: (chunk: string) => void }): Promise<TestResult> {
   if (!options.approved && !isAllowedCommand(command)) throw new CommandNotAllowedError(`Command is not in the allowlist: ${command}`);
-  const [exe, ...args] = parseCommand(command);
+  const [exe, ...args] = guardInstallScripts(parseCommand(command), options.allowInstallScripts === true);
   const result = await runProcess(exe, { cwd, args, env: commandEnv(), signal: options.signal, timeoutMs: options.timeoutMs,
     onOutput: (c) => options.onOutput?.(c) });
   const output = redact(`${result.stdout}\n${result.stderr}`.trim());

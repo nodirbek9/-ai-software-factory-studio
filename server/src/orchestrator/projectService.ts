@@ -1,4 +1,4 @@
-import type { AgentRole, AgentStatus, AgentView, Approval, CreateProjectInput, Project, ProjectSnapshot, Task } from '@asf/shared';
+import type { AgentRole, AgentStatus, AgentView, Approval, CreateProjectInput, Project, ProjectSnapshot, StudioEvent, Task } from '@asf/shared';
 import { AGENT_ROLE_INFO, AGENT_ROLES, STANDARD_WORKFLOW_ID } from '@asf/shared';
 import { chatPrompt } from '../agents/prompts.ts';
 import { redact } from '../security/redact.ts';
@@ -19,6 +19,17 @@ export interface AuditStarter {
 }
 
 const CHAT_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * A snapshot's history events without the full project/task copies that `project.updated`, `task.updated` and
+ * `task.checkpoint` carry for live clients: the snapshot already holds the current project and tasks, and those copies
+ * made a busy project's snapshot ~700 KB (Phase 7 payload target). Live SSE events keep their data.
+ */
+export function slimHistoryEvent(event: StudioEvent): StudioEvent {
+  if (!event.data || (!('project' in event.data) && !('task' in event.data))) return event;
+  const { project: _project, task: _task, ...rest } = event.data;
+  return { ...event, data: Object.keys(rest).length ? rest : null };
+}
 
 function slugify(name: string): string {
   return name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'project';
@@ -159,7 +170,7 @@ export class ProjectService {
       tasks: this.currentTasks(projectId),
       agents: this.agentViews(projectId),
       approvals: this.ctx.repos.approvals.listByProject(projectId),
-      recentEvents: this.ctx.repos.events.list({ projectId, limit: 300 }),
+      recentEvents: this.ctx.repos.events.list({ projectId, limit: 300 }).map(slimHistoryEvent),
     };
   }
 

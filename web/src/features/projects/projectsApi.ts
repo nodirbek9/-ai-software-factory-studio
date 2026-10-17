@@ -35,3 +35,14 @@ export async function getReport(projectId: string): Promise<string | null> {
 export function getRepo(projectId: string): Promise<RepoOverview> {
   return api<RepoOverview>(`/api/v2/projects/${enc(projectId)}/repo`);
 }
+
+/** Whether package installs of this project may run lifecycle scripts (off = `--ignore-scripts`, P7-S8). */
+export async function getInstallScripts(projectId: string): Promise<boolean> {
+  return (await api<{ allowed: boolean }>(`/api/v2/projects/${enc(projectId)}/install-scripts`)).allowed;
+}
+
+export async function setInstallScripts(projectId: string, allowed: boolean): Promise<boolean> {
+  const result = await api<{ allowed: boolean }>(`/api/v2/projects/${enc(projectId)}/install-scripts`,
+    { method: 'PUT', json: { allowed, confirm: true } });
+  return result.allowed;
+}

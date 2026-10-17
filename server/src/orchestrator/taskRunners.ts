@@ -8,6 +8,7 @@ import { FILE_PROTOCOL, RESUME_NOTE, architecturePrompt, conflictPrompt, impleme
 import { transaction } from '../db/database.ts';
 import { ingestTaskFindings } from '../quality/findings.ts';
 import { generateReport } from '../reports/reportGenerator.ts';
+import { installScriptsAllowed } from '../security/installScripts.ts';
 import { compileWorkflow, qaVerifyNodeId, WorkflowCompileError } from '../workflows/compile.ts';
 import { expandPlanRows } from '../workflows/expand.ts';
 import { CommandNotAllowedError, isAllowedCommand, runAllowedCommand } from '../workspace/commandRunner.ts';
@@ -370,7 +371,7 @@ async function runProjectTests({ ctx, project, task, signal }: RunnerArgs, appro
   const command = testCommandOf(project, task);
   ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'test.started', message: `Running ${command}` });
   const result = await ctx.integrationLock.run(project.id, () => runAllowedCommand(command, integrationPath(project), {
-    signal, timeoutMs: timeoutMs(ctx, task), approved,
+    signal, timeoutMs: timeoutMs(ctx, task), approved, allowInstallScripts: installScriptsAllowed(ctx, project.id),
   }));
   ctx.repos.tasks.update(task.id, { testResult: result });
   ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'test.result', level: result.passed ? 'info' : 'error',
@@ -474,7 +475,7 @@ async function runCommand({ ctx, project, task, signal }: RunnerArgs): Promise<T
   if (!isAllowedCommand(command) && !approved) requestCommandApproval(ctx, project, task, command, 'Command');
   ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'command.started', message: `Running ${command}` });
   const result = await ctx.integrationLock.run(project.id, () => runAllowedCommand(command, integrationPath(project), {
-    signal, timeoutMs: timeoutMs(ctx, task), approved,
+    signal, timeoutMs: timeoutMs(ctx, task), approved, allowInstallScripts: installScriptsAllowed(ctx, project.id),
   }));
   const tail = result.outputTail.slice(-COMMAND_TAIL).trim();
   const status = result.summary === 'cancelled' || /^timed out/.test(result.summary) ? `, ${result.summary}` : '';
