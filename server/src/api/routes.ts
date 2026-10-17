@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AGENT_ROLES, EFFORT_LEVELS, type AgentRole, type AgentTestResult, type FsRoots, type ServerInfo, type StudioEvent } from '@asf/shared';
 import { ProviderLimitError } from '../providers/types.ts';
 import { redact } from '../security/redact.ts';
-import { isLoopback } from '../config.ts';
+import { isLoopback, type AppConfig } from '../config.ts';
 import { getSettings, type StudioContext } from '../orchestrator/context.ts';
 import { buildLiveSnapshot } from '../orchestrator/liveMonitor.ts';
 import { ProjectError, type ProjectService } from '../orchestrator/projectService.ts';
@@ -122,12 +122,22 @@ async function testAgent(ctx: StudioContext, role: AgentRole): Promise<AgentTest
   return result;
 }
 
+/** The dashboard's own origin (or a configured one); loopback studios also accept 127.0.0.1/localhost dev ports. */
+export function originAllowed(config: AppConfig, origin: string, hostHeader: string | undefined): boolean {
+  const host = hostHeader ?? '';
+  return origin === `http://${host}` || origin === `https://${host}` || config.allowedOrigins.includes(origin)
+    || (isLoopback(config.host) && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin));
+}
+
 export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler }: RouteDeps): void {
   const { config } = ctx;
   const authRequired = Boolean(config.authToken);
 
   // ---- security hooks: loopback Host check, token auth (always when configured) and CSRF origin check for mutations
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+    // Absolute-form targets (`GET http://host/api/x`) are routed by Fastify but would skip every check below (V21-S1).
+    // Browsers only send them to proxies, so the studio refuses them.
+    if (!request.url.startsWith('/')) return reply.code(400).send({ error: 'Absolute-form request targets are not accepted' });
     if (!request.url.startsWith('/api/')) return;
     // DNS rebinding: a page on attacker.example resolving to 127.0.0.1 sends its own name as Host (and Origin).
     if (isLoopback(config.host) && !LOOPBACK_HOST_NAMES.has(hostName(request.headers.host))) {
@@ -141,10 +151,7 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       const origin = request.headers.origin;
       if (origin) {
-        const host = request.headers.host ?? '';
-        const allowed = origin === `http://${host}` || origin === `https://${host}` || config.allowedOrigins.includes(origin)
-          || (isLoopback(config.host) && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin));
-        if (!allowed) return reply.code(403).send({ error: 'Cross-origin request rejected' });
+        if (!originAllowed(config, origin, request.headers.host)) return reply.code(403).send({ error: 'Cross-origin request rejected' });
       }
       if (!request.headers['content-type']?.startsWith('application/json')) {
         return reply.code(415).send({ error: 'Mutating requests must use application/json' });

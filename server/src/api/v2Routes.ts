@@ -80,7 +80,7 @@ const layoutSchema = z.object({
   version: z.literal(1),
   preset: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(8), z.literal('custom')]),
   root: layoutNode,
-  panels: z.record(shortId, z.object({ sessionId: z.string().max(100).nullable(), tab: z.enum(['chat', 'activity', 'changes', 'files', 'output', 'task']),
+  panels: z.record(shortId, z.object({ sessionId: z.string().max(100).nullable(), tab: z.enum(['chat', 'activity', 'changes', 'files', 'output', 'task', 'terminal']),
     kind: z.enum(['session', 'orchestrator']) }).passthrough()),
   maximized: shortId.nullable(),
   minimized: z.array(shortId).max(64),

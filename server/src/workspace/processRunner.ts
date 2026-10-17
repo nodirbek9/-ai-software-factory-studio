@@ -53,7 +53,8 @@ export function childEnv(extra: Record<string, string | undefined> = {}): Record
 }
 
 /** Environment names that usually hold credentials (FOO_API_KEY, GITHUB_TOKEN, DB_PASSWORD, …). */
-const SECRET_ENV_NAME = /(^|_)(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|ACCESS_KEY)$/i;
+// Credential-looking names, including PGPASSWORD-style suffixes and connection strings with passwords (V21-S6).
+const SECRET_ENV_NAME = /((^|_)(API_?KEY|TOKEN|SECRET|CREDENTIALS?|PRIVATE_KEY|ACCESS_KEY|DSN|CONNECTION_STRING)|PASSWORD|PASSWD|(DATABASE|DB|MONGO(DB)?|REDIS|POSTGRES(QL)?|MYSQL|AMQP)_UR[IL])$/i;
 
 /** Environment for project commands (tests, builds): like childEnv(), minus anything that looks like a credential. */
 export function commandEnv(): Record<string, string | undefined> {

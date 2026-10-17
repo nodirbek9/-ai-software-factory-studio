@@ -48,9 +48,13 @@ test('six panels, scripted turns in two sessions, layout survives a reload (P3-0
   await expect(page.getByRole('region', { name: 'Alpha' }).getByText('Hello from the E2E test')).toBeVisible();
 });
 
-test('the Terminal button is disabled with its reason (D-019)', async ({ page }) => {
+test('terminals: available on loopback, offered only in edit sessions (Phase 3c, D-019)', async ({ page, request }) => {
+  const list = await (await request.get('/api/v2/terminals')).json();
+  expect(list).toEqual({ terminals: [], unavailableReason: null });
   await page.goto('/#/workspace');
   await page.getByRole('combobox', { name: 'Current project' }).selectOption(project.id);
-  const terminal = page.getByRole('button', { name: /Terminal/ }).first();
-  await expect(terminal).toBeDisabled();
+  // The Scripted provider cannot edit files, so its sessions are read-only and get no Terminal tab.
+  const alpha = page.getByRole('region', { name: 'Alpha' });
+  await expect(alpha.getByRole('tab', { name: 'Chat' })).toBeVisible();
+  await expect(alpha.getByRole('tab', { name: 'Terminal' })).toHaveCount(0);
 });

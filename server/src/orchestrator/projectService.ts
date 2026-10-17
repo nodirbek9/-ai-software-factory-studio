@@ -37,6 +37,8 @@ function slugify(name: string): string {
 
 export class ProjectService {
   private readonly chats = new Set<string>();
+  /** Set by the app: closes the project's owner terminals before its worktrees are deleted (Phase 3c, V21-S5). */
+  beforeFilesRemoval?: (projectId: string) => Promise<void>;
 
   constructor(private readonly ctx: StudioContext, private readonly scheduler: TaskScheduler, private readonly runs: RunService,
     private readonly audits: AuditStarter | null = null) {}
@@ -156,6 +158,7 @@ export class ProjectService {
     if (['planning', 'running', 'awaiting_approval'].includes(project.status) || this.scheduler.hasActiveTasks(projectId)) {
       throw new ProjectError('Stop the project (Stop button) before deleting it', 409);
     }
+    await this.beforeFilesRemoval?.(projectId);
     const result = await this.ctx.workspace.removeProjectFiles(project);
     this.ctx.repos.projects.delete(projectId);
     this.ctx.events.emit({ type: 'project.deleted', level: 'warn', message: `Project "${project.name}" deleted`,

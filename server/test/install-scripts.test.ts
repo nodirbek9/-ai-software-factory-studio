@@ -38,3 +38,25 @@ describe('package install scripts (P7-S8)', () => {
     }
   });
 });
+
+describe('install-scripts bypasses (V21-S3)', () => {
+  it('blocks scripts through the environment for every package-manager use except explicit script runs', async () => {
+    const { installScriptsEnv, scriptOverrideFlag } = await import('../src/security/installScripts.ts');
+    const blocked = { npm_config_ignore_scripts: 'true', YARN_IGNORE_SCRIPTS: 'true' };
+    expect(installScriptsEnv(['npx', 'vitest', 'run'], false)).toEqual(blocked);
+    expect(installScriptsEnv(['C:/nodejs/npm.cmd', 'install', '--prefer-offline'], false)).toEqual(blocked);
+    expect(installScriptsEnv(['C:/nodejs/npm.cmd', 'test'], false)).toEqual({}); // the path is reduced to the tool name
+    expect(installScriptsEnv(['npm', 'test'], false)).toEqual({});
+    expect(installScriptsEnv(['npm', 'run', 'build'], false)).toEqual({});
+    expect(installScriptsEnv(['npx', 'vitest', 'run'], true)).toEqual({});
+    expect(scriptOverrideFlag(['npm', 'ci', '--ignore-scripts', '--ignore-scripts=false'])).toBe('--ignore-scripts=false');
+    expect(scriptOverrideFlag(['npm', 'install', '--no-ignore-scripts'])).toBe('--no-ignore-scripts');
+    expect(scriptOverrideFlag(['npm', 'ci', '--ignore-scripts'])).toBeNull();
+  });
+
+  it('refuses an approved command that switches scripts back on', async () => {
+    const { runAllowedCommand, CommandNotAllowedError } = await import('../src/workspace/commandRunner.ts');
+    await expect(runAllowedCommand('npm install --ignore-scripts=false', tempDir('override'), { timeoutMs: 5_000, approved: true }))
+      .rejects.toBeInstanceOf(CommandNotAllowedError);
+  });
+});
