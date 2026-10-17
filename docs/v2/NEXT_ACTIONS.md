@@ -1,24 +1,19 @@
 # V2 — Next actions (in order)
 
-Read `docs/v2/CURRENT_STATE.md` first. Do the first unfinished step; update `CURRENT_STATE.md` after it.
+Work in `D:\jarvis 2\asf-v2` (branch `feature/v2-studio`). Read `docs/v2/CURRENT_STATE.md` first.
+Phases 0–7 are done and committed. Everything left needs the owner, or is a follow-up listed below.
 
-## 1. Commit Phase 0b (needs the owner's OK)
-`git add -A` → `git commit -m "fix(security): Phase 0b V1 hardening (R1-R8, S1)"` with a body listing the
-items (see `docs/v2/phases/PHASE_0B.md`). Then tell the owner to restart V1 (`start-studio.cmd`) when no
-agents run (`GET /api/live` → `running: []`), so the fixes take effect.
+## 1. Owner decisions (ask, never assume)
+1. **Merge into `main` + tag `v2.0.0` + cut-over** — MIGRATION_PLAN.md step D. Before it: V1 idle check
+   (`GET http://127.0.0.1:4317/api/live` → `running: []`), fresh backup, then merge `--no-ff`, `npm install`, gates,
+   start `start-studio.cmd`, smoke (Home, projects, one Scripted sample run). Rollback = WINDOWS_LAUNCH.md.
+2. Until the cut-over: **restart V1** so the Phase 0b fixes apply (V1 still runs pre-0b code).
+3. **Phase 3c PTY terminal** (D-019, native dependency) — yes/no.
+4. **P7-S8**: package install scripts in workflow tool nodes — add project trust / `--ignore-scripts`?
 
-## 2. Create the V2 worktree
-`MIGRATION_PLAN.md` Step A 5–6: `git branch feature/v2-studio`, `git worktree add "D:/jarvis 2/asf-v2"
-feature/v2-studio`, `npm install` there, `.env` with `ASF_PORT=4327` and a fresh `ASF_DATA_DIR`, web dev port
-5327 (`.claude/launch.json` entries), `start-v2-dev.cmd`.
-
-## 3. Phase 1 — design foundation + app shell
-1. Write `docs/v2/phases/PHASE_1.md` from `IMPLEMENTATION_PHASES.md` Phase 1, `DESIGN_SYSTEM.md`,
-   `UI_SCREEN_SPECIFICATIONS.md` §0: chunks ≤ 5 files, each with its tests.
-2. Ask the owner once for the new web dev/runtime dependencies (react-resizable-panels, cmdk,
-   @tanstack/react-virtual, @vitest/coverage-v8, @playwright/test).
-3. Implement chunk by chunk (own limit first; then akk4 / GPT per the model order), gates after each chunk,
-   Opus review, `CURRENT_STATE.md`, Uzbek report.
-
-## Then
-Phases 2–7 in order (`IMPLEMENTATION_PHASES.md`).
+## 2. Follow-ups (no owner decision needed, normal worker pipeline)
+1. Payload target (≤ 150 KB): the V2 shell still loads the V1 project snapshot (`/api/projects/:id`, up to 701 KB on
+   the real DB); move the pages that need it to summary endpoints, keep V1 Dashboard/Monitor working.
+2. Runs page `#/runs` (UI spec §6), Project detail Files tab, `events(created_at)` index, coverage scanner.
+3. Re-run `npm run test:e2e`, `scripts/migration-rehearsal.mts` and `scripts/rollback-drill.mts` right before the
+   cut-over (PHASE_7.md §1, §4, §5).

@@ -102,19 +102,33 @@ export class ProviderRegistry {
   }
 
   async list(force = false): Promise<ProviderInfo[]> {
+    return Promise.all([...this.adapters.values()].map(async (adapter) => this.info(adapter, await this.detect(adapter.id, force))));
+  }
+
+  /**
+   * For status read models (Home, system health): detects only enabled providers (cached, same TTL as list());
+   * a disabled provider reports its last cached detection, or unavailable when it was never checked.
+   */
+  async statusList(): Promise<ProviderInfo[]> {
     return Promise.all([...this.adapters.values()].map(async (adapter) => {
-      const detection = await this.detect(adapter.id, force);
-      const cfg = this.config.getProviderConfig(adapter.id)!;
-      const customModels = (cfg.settings.models ?? '').split(',').map((m) => m.trim()).filter(Boolean);
-      return {
-        id: adapter.id, label: adapter.label, kind: adapter.kind, editsFiles: adapter.editsFiles, isAi: adapter.isAi,
-        enabled: cfg.enabled, available: detection.available, version: detection.version, reason: detection.reason,
-        models: customModels.length ? customModels : detection.models ?? adapter.models, defaultModel: adapter.defaultModel,
-        budgetUsd: cfg.budgetUsd, spentUsd: this.usage.spentByProvider(adapter.id),
-        limitedUntil: this.limitedUntil(adapter.id)?.toISOString() ?? null,
-        settings: Object.fromEntries(Object.entries(cfg.settings).filter(([k]) => NON_SECRET_SETTINGS.has(k))),
-      };
+      const enabled = this.config.getProviderConfig(adapter.id)?.enabled ?? false;
+      const detection = enabled ? await this.detect(adapter.id)
+        : this.detections.get(adapter.id)?.value ?? { available: false, version: null, reason: 'Disabled (not checked)' };
+      return this.info(adapter, detection);
     }));
+  }
+
+  private info(adapter: ProviderAdapter, detection: ProviderDetection): ProviderInfo {
+    const cfg = this.config.getProviderConfig(adapter.id)!;
+    const customModels = (cfg.settings.models ?? '').split(',').map((m) => m.trim()).filter(Boolean);
+    return {
+      id: adapter.id, label: adapter.label, kind: adapter.kind, editsFiles: adapter.editsFiles, isAi: adapter.isAi,
+      enabled: cfg.enabled, available: detection.available, version: detection.version, reason: detection.reason,
+      models: customModels.length ? customModels : detection.models ?? adapter.models, defaultModel: adapter.defaultModel,
+      budgetUsd: cfg.budgetUsd, spentUsd: this.usage.spentByProvider(adapter.id),
+      limitedUntil: this.limitedUntil(adapter.id)?.toISOString() ?? null,
+      settings: Object.fromEntries(Object.entries(cfg.settings).filter(([k]) => NON_SECRET_SETTINGS.has(k))),
+    };
   }
 
   updateProvider(id: string, patch: { enabled?: boolean; budgetUsd?: number | null; settings?: Record<string, string> }): void {
@@ -165,8 +179,22 @@ export class ProviderRegistry {
   /** Routing policy: the agent's assigned provider, then (if allowed) the configured fallback order. */
   async resolveForRole(role: AgentRole, fallbackOrder: string[]): Promise<ResolvedProvider> {
     const assignment = this.agentConfig(role);
+    return this.resolve(assignment.providerId, assignment.model, assignment.effort ?? '', assignment.allowFallback, fallbackOrder, role);
+  }
+
+  /**
+   * Routing for a caller that names the provider itself (workspace sessions): exactly that provider when it is
+   * usable, else — only when allowed — the fallback order, the same way resolveForRole does.
+   */
+  async resolveExplicit(providerId: string, model: string, effort: EffortLevel, allowFallback: boolean, fallbackOrder: string[]): Promise<ResolvedProvider> {
+    return this.resolve(providerId, model, effort, allowFallback, fallbackOrder,
+      `provider ${providerId}${allowFallback ? ' or its fallbacks' : ' (fallback is off)'}`);
+  }
+
+  private async resolve(providerId: string, requestedModel: string, effort: EffortLevel, allowFallback: boolean, fallbackOrder: string[],
+    subject: string): Promise<ResolvedProvider> {
     const reasons: string[] = [];
-    const candidates = [assignment.providerId, ...(assignment.allowFallback ? fallbackOrder.filter((id) => id !== assignment.providerId) : [])];
+    const candidates = [providerId, ...(allowFallback ? fallbackOrder.filter((id) => id !== providerId) : [])];
     for (const id of candidates) {
       const reason = await this.unusableReason(id);
       if (reason) { reasons.push(reason); continue; }
@@ -174,10 +202,10 @@ export class ProviderRegistry {
       const settings = this.config.getProviderConfig(id)!.settings;
       // Keep the requested model on a fallback provider that offers it too (e.g. another Claude login), so a
       // fallback never silently downgrades Opus to the provider's default model.
-      const offersRequested = Boolean(assignment.model) && adapter.models.includes(assignment.model);
-      const model = (id === assignment.providerId && assignment.model) || offersRequested ? assignment.model : adapter.defaultModel;
-      return { adapter, model, effort: assignment.effort ?? '', settings, fallbackFrom: id === assignment.providerId ? null : assignment.providerId };
+      const offersRequested = Boolean(requestedModel) && adapter.models.includes(requestedModel);
+      const model = (id === providerId && requestedModel) || offersRequested ? requestedModel : adapter.defaultModel;
+      return { adapter, model, effort, settings, fallbackFrom: id === providerId ? null : providerId };
     }
-    throw new NoProviderError(`No usable provider for ${role}: ${reasons.join('; ')}`);
+    throw new NoProviderError(`No usable provider for ${subject}: ${reasons.join('; ')}`);
   }
 }

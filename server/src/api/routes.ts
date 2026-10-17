@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -13,8 +14,9 @@ import { ProjectError, type ProjectService } from '../orchestrator/projectServic
 import type { TaskScheduler } from '../orchestrator/scheduler.ts';
 import { ALLOWED_COMMANDS } from '../workspace/commandRunner.ts';
 import { SensitiveFileError, WorkspaceError } from '../workspace/workspaceManager.ts';
+import { STUDIO_VERSION as VERSION } from '../version.ts';
+import { registerV2Routes } from './v2Routes.ts';
 
-const VERSION = '0.1.0';
 const SSE_HEARTBEAT_MS = 20_000;
 
 const createProjectSchema = z.object({
@@ -41,10 +43,19 @@ const settingsSchema = z.object({
   idleTimeoutMinutes: z.number().int().min(2).max(120),
   fallbackOrder: z.array(z.string().max(60)).max(20),
   maxFixRounds: z.number().int().min(0).max(5),
+  maxAgentProcesses: z.number().int().min(1).max(8),
 }).partial();
 const decisionSchema = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(2000).nullable().optional() });
 const chatSchema = z.object({ message: z.string().trim().min(1).max(8000) });
 const idParam = z.object({ id: z.string().uuid() });
+
+function osUserName(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
+  }
+}
 
 const LOOPBACK_HOST_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -78,9 +89,11 @@ async function testAgent(ctx: StudioContext, role: AgentRole): Promise<AgentTest
     effortApplied: config.providerId === 'codex' || config.providerId.startsWith('claude-code'),
     ok: false, answer: null, correct: null, reasoningTokens: null, outputTokens: null, durationMs: 0, error: null,
   };
+  let release: (() => void) | null = null;
   try {
     const reason = await ctx.registry.unusableReason(config.providerId);
     if (reason) throw new Error(reason);
+    release = await ctx.budget.acquire({ kind: 'session', id: `agent-test:${role}`, projectId: '', label: 'agent test' });
     const cwd = path.join(ctx.config.dataDir, 'agent-test');
     fs.mkdirSync(cwd, { recursive: true });
     if (fs.existsSync(path.join(cwd, '.git'))) throw new Error('Agent test scratch folder must not be a git repository');
@@ -101,6 +114,8 @@ async function testAgent(ctx: StudioContext, role: AgentRole): Promise<AgentTest
   } catch (error) {
     result.error = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
     if (error instanceof ProviderLimitError) ctx.registry.markLimited(config.providerId, error.resetsAt, result.error);
+  } finally {
+    release?.();
   }
   result.durationMs = Date.now() - started;
   ctx.events.emit({ role, type: 'agent.test', message: `${role} test: ${result.providerLabel} / ${result.actualModel ?? 'unknown'} · effort ${result.effort || 'default'} · ${result.reasoningTokens ?? 'unknown'} thinking tokens · ${result.ok ? 'ok' : 'failed'}` });
@@ -154,7 +169,7 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
   // ---- server info & settings
   app.get('/api/info', async (): Promise<ServerInfo> => ({
     version: VERSION, host: config.host, port: config.port, authRequired, approvedRoots: ctx.workspace.approvedRoots,
-    dataDir: config.dataDir, allowedCommands: [...ALLOWED_COMMANDS], settings: getSettings(ctx),
+    dataDir: config.dataDir, allowedCommands: [...ALLOWED_COMMANDS], settings: getSettings(ctx), userName: osUserName(),
   }));
   app.put('/api/settings', async (request) => {
     const patch = settingsSchema.parse(request.body);
@@ -287,6 +302,9 @@ export function registerRoutes(app: FastifyInstance, { ctx, projects, scheduler 
     const heartbeat = setInterval(() => res.write(': ping\n\n'), SSE_HEARTBEAT_MS);
     request.raw.on('close', () => { clearInterval(heartbeat); unsubscribe(); });
   });
+
+  // ---- V2 read models (/api/v2/*)
+  registerV2Routes(app, { ctx });
 
   // ---- built dashboard (production mode)
   if (fs.existsSync(config.webDistDir)) {

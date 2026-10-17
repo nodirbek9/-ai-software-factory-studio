@@ -57,6 +57,7 @@ export class ClaudeCodeProvider implements ProviderAdapter {
   readonly reportsActivity = true;
   readonly models = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'opus', 'sonnet', 'haiku'];
   readonly defaultModel = 'claude-sonnet-5-5';
+  readonly supports = { resume: 'native' as const };
 
   constructor(private readonly options: ClaudeAccountOptions = { id: 'claude-code', label: 'Claude Code CLI', defaultConfigDir: null, accountNumber: null }) {
     this.id = options.id;
@@ -84,17 +85,22 @@ export class ClaudeCodeProvider implements ProviderAdapter {
 
   async run(request: ProviderRunRequest, settings: Record<string, string> = {}): Promise<ProviderRunResult> {
     const tools = request.mode === 'edit' ? 'Read,Edit,Write,Glob,Grep' : 'Read,Glob,Grep';
+    // Task runs never persist a CLI session; workspace sessions start one (--session-id) and resume it later.
+    const session = request.session;
+    const sessionArgs = !session ? ['--no-session-persistence']
+      : session.resumeRef ? ['--resume', session.resumeRef] : ['--session-id', session.id];
     // stream-json lets the dashboard show what the agent is doing (files read/edited) while it works.
     const args = [
       '-p', '--output-format', 'stream-json', '--verbose', '--model', request.model || this.defaultModel,
       '--permission-mode', request.mode === 'edit' ? 'acceptEdits' : 'default',
       '--allowedTools', tools, '--disallowedTools', 'Bash,WebFetch,WebSearch',
       // No setting sources: a repository's .claude/settings*.json could define hooks that run shell commands.
-      '--setting-sources', '', '--no-session-persistence',
+      '--setting-sources', '', ...sessionArgs,
       ...(request.effort ? ['--effort', request.effort] : []),
       '--append-system-prompt', `${STUDIO_GUARD} Never run shell commands. ${request.systemPrompt}`.replace(/\s+/g, ' '),
     ];
     let pending = '';
+    let initSessionId: string | undefined;
     const result = await runProcess('claude', {
       cwd: request.cwd, args, input: request.prompt, timeoutMs: request.timeoutMs, signal: request.signal, env: this.env(settings),
       onOutput: (chunk, stream) => {
@@ -104,6 +110,7 @@ export class ClaudeCodeProvider implements ProviderAdapter {
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? '';
         for (const line of lines) {
+          if (session && !initSessionId) initSessionId = claudeInitSessionId(line);
           const activity = describeClaudeEvent(line, request.cwd);
           if (activity) request.onOutput?.(`${activity}\n`);
         }
@@ -115,10 +122,13 @@ export class ClaudeCodeProvider implements ProviderAdapter {
       if (parsed?.api_error_status === 429 || looksLikeLimit(reported)) throw limitOr(this.label, reported || '429 rate limit')!;
       if (result.exitCode !== 0) throw failure(this.label, result);
     }
-    if (!parsed) return { text: result.stdout, usage: null };
+    // Only a persisted (session) run has a resumable reference; a task run's session_id is thrown away by the CLI.
+    const sessionRef = session ? (parsed?.session_id || initSessionId || firstInitSessionId(result.stdout)) : undefined;
+    if (!parsed) return { text: result.stdout, usage: null, ...(sessionRef ? { sessionRef } : {}) };
     if (parsed.is_error) throw new ProviderError(`${this.label} reported an error: ${redact(String(parsed.result)).slice(0, 1500)}`);
     const u = parsed.usage ?? {};
     return {
+      ...(sessionRef ? { sessionRef } : {}),
       text: parsed.result ?? '',
       usage: {
         inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
@@ -132,8 +142,30 @@ export class ClaudeCodeProvider implements ProviderAdapter {
   }
 }
 
+/** The session id of a stream-json `system`/`init` line, or undefined for any other line. */
+function claudeInitSessionId(line: string): string | undefined {
+  if (!line.includes('"session_id"')) return undefined;
+  try {
+    const event = JSON.parse(line) as { type?: string; subtype?: string; session_id?: unknown };
+    return event.type === 'system' && event.subtype === 'init' && typeof event.session_id === 'string' && event.session_id
+      ? event.session_id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Fallback when the init line arrived without a trailing newline (or the stream was not seen line by line). */
+function firstInitSessionId(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    const id = claudeInitSessionId(line);
+    if (id) return id;
+  }
+  return undefined;
+}
+
 interface ClaudeResultEvent {
-  type?: string; result?: string; is_error?: boolean; total_cost_usd?: number; api_error_status?: number; modelUsage?: Record<string, { outputTokens?: number; thinkingTokens?: number }>;
+  type?: string; result?: string; is_error?: boolean; total_cost_usd?: number; api_error_status?: number; session_id?: string;
+  modelUsage?: Record<string, { outputTokens?: number; thinkingTokens?: number }>;
   usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
     output_tokens_details?: { thinking_tokens?: number } };
 }
@@ -186,9 +218,10 @@ function mainModel(usage: Record<string, { outputTokens?: number }> | undefined)
 // ------------------------------------------------------------------ OpenAI Codex (GPT)
 
 interface CodexEvent { type?: string; item?: { type?: string; text?: string }; usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number; reasoning_output_tokens?: number };
-  message?: string; error?: { message?: string } }
+  message?: string; error?: { message?: string }; thread_id?: string }
 
 const CODEX_EFFORT: Record<string, string> = { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'xhigh' };
+const RESUME_CHECK_TIMEOUT_MS = 10_000;
 
 /** OpenAI Codex CLI (`codex exec --json`), sandboxed to the worktree. Uses whatever login the `codex` command has. */
 export class CodexProvider implements ProviderAdapter {
@@ -201,12 +234,25 @@ export class CodexProvider implements ProviderAdapter {
   readonly models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'];
   readonly defaultModel = 'gpt-6.1-sol';
 
+  /** Cached result of `codex exec resume --help` (older CLIs have no resume subcommand). */
+  private resumeCheck: Promise<boolean> | null = null;
+
   detect(): Promise<ProviderDetection> {
     return detectCli('codex');
   }
 
+  /** Native resume depends on the installed CLI, so it is checked once at runtime instead of declared in `supports`. */
+  resumeSupported(): Promise<boolean> {
+    this.resumeCheck ??= runProcess('codex', { cwd: os.tmpdir(), args: ['exec', 'resume', '--help'], timeoutMs: RESUME_CHECK_TIMEOUT_MS })
+      .then((result) => result.exitCode === 0 && !result.timedOut, () => false);
+    return this.resumeCheck;
+  }
+
   async run(request: ProviderRunRequest): Promise<ProviderRunResult> {
-    const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', request.mode === 'edit' ? 'workspace-write' : 'read-only'];
+    const resumeRef = request.session?.resumeRef;
+    const resume = resumeRef && await this.resumeSupported() ? resumeRef : null;
+    const args = [...(resume ? ['exec', 'resume', resume] : ['exec']), '--json', '--skip-git-repo-check',
+      '--sandbox', request.mode === 'edit' ? 'workspace-write' : 'read-only'];
     if (request.model && request.model !== 'default') args.push('-m', request.model);
     if (request.effort) args.push('-c', `model_reasoning_effort=${CODEX_EFFORT[request.effort] ?? 'high'}`);
     args.push('-');
@@ -214,6 +260,7 @@ export class CodexProvider implements ProviderAdapter {
       ? 'You may run the project build/test commands inside this sandbox to check your work. Never run git push or destructive git commands.'
       : 'Read-only: do not modify files.';
     let pending = '';
+    let streamThreadId: string | undefined;
     const result = await runProcess('codex', {
       cwd: request.cwd, args, input: `${STUDIO_GUARD} ${shellRule}\n${request.systemPrompt}\n\n${request.prompt}`,
       timeoutMs: request.timeoutMs, signal: request.signal,
@@ -224,6 +271,8 @@ export class CodexProvider implements ProviderAdapter {
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? '';
         for (const line of lines) {
+          // Captured while streaming too: the start of a long run's stdout may fall out of the capture buffer.
+          if (!streamThreadId && line.includes('"thread.started"')) streamThreadId = codexThreadId(line);
           const activity = describeCodexEvent(line, request.cwd);
           if (activity) request.onOutput?.(`${activity}
 `);
@@ -240,11 +289,23 @@ export class CodexProvider implements ProviderAdapter {
       throw failure(this.label, result);
     }
     const usage = events.find((e) => e.type === 'turn.completed')?.usage;
+    const threadId = streamThreadId
+      ?? events.find((e) => e.type === 'thread.started' && typeof e.thread_id === 'string' && e.thread_id)?.thread_id;
     return {
+      ...(threadId ? { sessionRef: threadId } : {}),
       text: messages.join('\n\n').trim(),
       usage: usage ? { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0,
         reasoningTokens: usage.reasoning_output_tokens, costUsd: null } : null,
     };
+  }
+}
+
+function codexThreadId(line: string): string | undefined {
+  try {
+    const event = JSON.parse(line) as CodexEvent;
+    return event.type === 'thread.started' && typeof event.thread_id === 'string' && event.thread_id ? event.thread_id : undefined;
+  } catch {
+    return undefined;
   }
 }
 

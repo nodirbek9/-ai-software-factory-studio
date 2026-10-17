@@ -103,7 +103,9 @@ stdout) or HTTP (`POST /scan` on loopback) — whichever Guardian ships; the ada
 - [ ] All destructive actions confirmed and audited.
 - [ ] Workflow import fuzz test (size, schema, ids).
 - [ ] No new dependency with install scripts or native builds unless approved (D-003, D-019).
-- [ ] Independent security review by a worker + Opus final sign-off.
+- [x] Independent security review by a worker + Opus final sign-off — 2026-10-17, GPT-6-Astra (read-only) found
+  P7-S1…S9; Opus verified each, fixed S1–S7 and S9 with tests (`server/test/security-p7.test.ts`); S8 (package
+  install scripts / project trust) waits for the owner. Details: `docs/v2/phases/PHASE_7.md` §2.
 
 ## SUMMARY
 V1's guards are solid for a local tool, but eight HIGH issues (audit R1–R7 plus S1: project-level Claude

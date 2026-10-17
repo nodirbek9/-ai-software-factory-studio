@@ -1,0 +1,33 @@
+import { Activity, Bot, Cpu, FolderGit2, FolderTree, Home, ListChecks, PlayCircle, Settings, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
+import type { View } from '@/store/studio';
+
+export interface NavItem {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  /** The page this item opens, or null while the feature is still being built. */
+  view: View | null;
+  /** Shown instead of navigating when `view` is null: what is missing, when it arrives and where to go meanwhile. */
+  plannedReason?: string;
+  /** Extra views that highlight this item (V1 pages reached through it). */
+  alsoActiveFor?: View[];
+}
+
+/** The 11 V2 destinations (docs/v2/phases/PHASE_1.md). Order matches the reference design. */
+export const NAV_ITEMS: readonly NavItem[] = [
+  { id: 'home', label: 'Home', icon: Home, view: 'home', alsoActiveFor: ['dashboard'] },
+  { id: 'projects', label: 'Projects', icon: FolderGit2, view: 'projects' },
+  { id: 'workspace', label: 'Agent Workspace', icon: Bot, view: 'workspace' },
+  { id: 'builder', label: 'Workflow Builder', icon: Workflow, view: 'builder' },
+  { id: 'tasks', label: 'Tasks', icon: ListChecks, view: 'tasks', alsoActiveFor: ['workflows'] },
+  { id: 'runs', label: 'Runs', icon: PlayCircle, view: 'monitor' },
+  { id: 'repos', label: 'Repos', icon: FolderTree, view: 'repos', alsoActiveFor: ['files'] },
+  { id: 'quality', label: 'QA & Security', icon: ShieldCheck, view: 'quality' },
+  { id: 'logs', label: 'Logs', icon: Activity, view: 'logs' },
+  { id: 'models', label: 'Models & Providers', icon: Cpu, view: 'models', alsoActiveFor: ['providers', 'agents'] },
+  { id: 'settings', label: 'Settings', icon: Settings, view: 'settings' },
+];
+
+export function isActive(item: NavItem, view: View): boolean {
+  return item.view === view || Boolean(item.alsoActiveFor?.includes(view));
+}

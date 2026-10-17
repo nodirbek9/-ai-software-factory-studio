@@ -73,6 +73,23 @@ describe('Settings', () => {
     ]);
   });
 
+  it('saves the agent process limit and rejects values outside 1 to 8', async () => {
+    const network = mockSettings();
+    await renderSettings();
+    const input = screen.getByLabelText(/^Agent processes at once/) as HTMLInputElement;
+    expect(input.value).toBe(String(serverInfo.settings.maxAgentProcesses));
+    fireEvent.change(input, { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert').textContent).toBe('Agent processes at once must be a whole number from 1 to 8.');
+    expect(network.calls.filter((call) => call.method === 'PUT')).toEqual([]);
+    fireEvent.change(input, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(network.calls.filter((call) => call.method === 'PUT')).toEqual([
+      { method: 'PUT', path: '/api/settings', body: { ...serverInfo.settings, maxAgentProcesses: 5 } },
+    ]);
+  });
+
   it('rejects fix rounds above five with an alert and no settings request', async () => {
     const network = mockSettings();
     await renderSettings();

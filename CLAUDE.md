@@ -22,14 +22,16 @@ Read only the files a step needs; do not re-scan the whole repository.
   (check `GET http://127.0.0.1:4317/api/live` → `running` must be empty). V2 development runs on
   ports 4327/5327 with its own `ASF_DATA_DIR` (decision D-001).
 - No commits/pushes, global installs, paid API calls or destructive actions without the owner's
-  explicit "ha" in chat. The folder is not a git repo yet; git init needs approval (D-020).
+  explicit "ha" in chat. Git: `main` = V1 (tag `v1.0.0`, then Phase 0b hardening); V2 is developed on
+  `feature/v2-studio` in the worktree `D:\jarvis 2\asf-v2` (start it with `start-v2-dev.cmd`: API 4327, web 5327).
 - V1 backup: `D:\jarvis 2\backups\asf-v1-2026-10-16\` (source, data, DB snapshot). Do not delete it.
 - No fake/demo data in the UI; every visible control must work or be disabled with a reason.
-- Gates after every change: `npm test` (53 server + 19 web tests), `npm run typecheck`, `npm run build`.
+- Gates after every change: `npm test` (68 server tests + the web tests), `npm run typecheck`, `npm run build`.
 
 ## Workers — owner's model order (2026-10-16)
 1. First do the work yourself on your own Claude limit until its **5-hour window reaches 80 %**.
-2. Then only: Claude **account 4** (headless, `node .ai-jobs/run-akk4.mjs <jobs.json> <id>=<model>`),
+2. Then only: Claude **account 4** (headless, `node .ai-jobs/run-akk4.mjs <jobs.json> <id>=<model>`), and when
+   account 4 is out of quota **account 5** (`CLAUDE_WORKER_ACCOUNT=5 node .ai-jobs/run-akk4.mjs ...`),
    **GPT via Codex** (router with `--model gpt-sol|gpt-astra|gpt-luna --only`), **Gemini** if it has quota.
 3. Never OmniRoute free models, Qoder, Antigravity Claude or other providers (the router's default chains
    fall through to them — always pin with `--only`).

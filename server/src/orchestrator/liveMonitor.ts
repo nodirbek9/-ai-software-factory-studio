@@ -56,7 +56,16 @@ export async function buildLiveSnapshot(ctx: StudioContext): Promise<LiveSnapsho
     callsToday: today.get(p.id)?.calls ?? 0, tokensToday: today.get(p.id)?.tokens ?? 0, costToday: today.get(p.id)?.cost ?? 0,
   }));
 
-  const recent: LiveFinished[] = repos.tasks.listRecentlyFinished(RECENT_LIMIT).map((t) => {
+  const recent = recentFinished(ctx, RECENT_LIMIT, projectName);
+
+  return { generatedAt: new Date().toISOString(), maxParallel: getSettings(ctx).maxParallelTasks, running, queued, providers: liveProviders, recent };
+}
+
+/** The most recently finished agent turns (gates excluded), newest first. */
+export function recentFinished(ctx: StudioContext, limit: number,
+  projectName: (id: string) => string = (id) => ctx.repos.projects.get(id)?.name ?? 'Deleted project'): LiveFinished[] {
+  const { repos } = ctx;
+  return repos.tasks.listRecentlyFinished(limit).map((t) => {
     const started = repos.events.latestForTask(t.id, 'agent.started');
     const effort = (started?.data as { effort?: string } | null)?.effort || null;
     return {
@@ -66,6 +75,4 @@ export async function buildLiveSnapshot(ctx: StudioContext): Promise<LiveSnapsho
       finishedAt: t.finishedAt!, error: t.error,
     };
   });
-
-  return { generatedAt: new Date().toISOString(), maxParallel: getSettings(ctx).maxParallelTasks, running, queued, providers: liveProviders, recent };
 }

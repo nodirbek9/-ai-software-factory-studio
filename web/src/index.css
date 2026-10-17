@@ -1,31 +1,52 @@
 @import 'tailwindcss';
 
+/* V2 design tokens (docs/v2/DESIGN_SYSTEM.md). The V1 names (ink-*, line, muted, brand, st-*) are kept so every
+   existing page picks up the V2 palette; new screens use the semantic names (canvas, surface, raised, accent-*). */
 @theme {
-  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
 
-  --color-ink-950: #0a1020;
+  --color-canvas: #080d19;
+  --color-sidebar: #0b1222;
+  --color-surface: #0f1729;
+  --color-raised: #131d33;
+  --color-hover: #192743;
+  --color-selected: #1c2550;
+
+  --color-ink-950: #080d19;
   --color-ink-900: #0f1729;
   --color-ink-850: #131d33;
-  --color-ink-800: #16213a;
-  --color-ink-700: #1e2b49;
-  --color-line: #24314f;
-  --color-line-soft: #1b2742;
-  --color-text: #dce4f2;
-  --color-muted: #8391ad;
-  --color-faint: #5c6a88;
+  --color-ink-800: #192743;
+  --color-ink-700: #22304f;
+  --color-line: #2a3a5a;
+  --color-line-soft: #1e2a44;
+  --color-text: #e6edf8;
+  --color-muted: #94a3bc;
+  --color-faint: #7c89a5;
 
-  --color-brand: #6d8cff;
-  --color-brand-2: #3fd0d4;
+  --color-brand: #7b9bff;
+  --color-brand-2: #5fd4d8;
+  --color-brand-violet: #a78bfa;
+  /* Primary actions: saturated fill with white text (contrast ≥ 4.5:1); pastel accents are for text and borders. */
+  --color-accent-from: #2563eb;
+  --color-accent-to: #4f46e5;
 
-  --color-st-idle: #64748b;
+  --color-agent-claude: #ffaa8c;
+  --color-agent-codex: #9fe7e2;
+  --color-agent-gemini: #d4a6ff;
+
+  --color-st-idle: #8a96aa;
   --color-st-planning: #a78bfa;
-  --color-st-running: #5b8cff;
+  --color-st-running: #6b9bff;
   --color-st-waiting: #f5b04a;
-  --color-st-blocked: #f5b04a;
+  --color-st-blocked: #ffb86b;
   --color-st-completed: #34d399;
   --color-st-failed: #f87171;
   --color-st-cancelled: #94a3b8;
+
+  --shadow-card: 0 8px 24px #00000033;
+  --shadow-modal: 0 20px 60px #00000066;
+  --shadow-glow: 0 0 18px #8ab4ff26;
 
   --animate-rail: rail 1.6s ease-in-out infinite;
   @keyframes rail {
@@ -39,9 +60,9 @@ html, body, #root { height: 100%; }
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 600px at 85% -10%, rgb(109 140 255 / 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgb(63 208 212 / 0.06), transparent 60%),
-    var(--color-ink-950);
+    radial-gradient(1200px 600px at 85% -10%, rgb(79 70 229 / 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(37 99 235 / 0.06), transparent 60%),
+    var(--color-canvas);
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: 14px;

@@ -11,11 +11,16 @@ export interface FixRound {
   shifted: Task[];
 }
 
-/** Each verification task (tests, security review, final review) has its own fix-round budget. */
-const roundsKey = (projectId: string, taskKey: string): string => `fixRounds:${projectId}:${taskKey}`;
+/** Each verification task (tests, security review, final review) of a run has its own fix-round budget. */
+const roundsKey = (runId: string, taskKey: string): string => `fixRounds:${runId}:${taskKey}`;
 
-export function fixRoundsUsed(ctx: StudioContext, projectId: string, taskKey: string): number {
-  return ctx.repos.config.getSetting<number>(roundsKey(projectId, taskKey), 0);
+export function fixRoundsUsed(ctx: StudioContext, runId: string, taskKey: string): number {
+  return ctx.repos.config.getSetting<number>(roundsKey(runId, taskKey), 0);
+}
+
+/** Fix rounds this verification task may use: its workflow node's limit, else the studio setting. */
+export function maxFixRoundsFor(ctx: StudioContext, task: Task): number {
+  return task.options.fixRoundsMax ?? getSettings(ctx).maxFixRounds;
 }
 
 function uniqueKey(base: string, tasks: Task[]): string {
@@ -44,20 +49,23 @@ export function fixRoleFor(source: FailureSource, findings: string): 'frontend' 
 
 export function insertFixTask(ctx: StudioContext, db: Db, failed: Task, source: FailureSource, findings: string): FixRound | null {
   const settings = getSettings(ctx);
-  const used = fixRoundsUsed(ctx, failed.projectId, failed.key);
-  if (used >= settings.maxFixRounds) return null;
+  const used = fixRoundsUsed(ctx, failed.runId, failed.key);
+  if (used >= maxFixRoundsFor(ctx, failed)) return null;
   assertTransition(failed.status, 'pending');
   const round = used + 1;
-  const tasks = ctx.repos.tasks.listByProject(failed.projectId);
+  const tasks = ctx.repos.tasks.listByRun(failed.runId);
   const key = uniqueKey(`fix-${failed.key}-${round}`, tasks);
+  const fixRole = failed.options.fixRole;
+  const role = fixRole === 'backend' || fixRole === 'frontend' ? fixRole : fixRoleFor(source, findings);
 
   return transaction(db, () => {
-    ctx.repos.config.setSetting(roundsKey(failed.projectId, failed.key), round);
+    ctx.repos.config.setSetting(roundsKey(failed.runId, failed.key), round);
     const shifted = tasks.filter((t) => t.orderIndex >= failed.orderIndex && t.id !== failed.id)
       .map((t) => ctx.repos.tasks.update(t.id, { orderIndex: t.orderIndex + 1 }));
     const fix = ctx.repos.tasks.create(failed.projectId, {
-      key, title: `Fix round ${round}: ${failed.title}`, description: fixTaskDescription(failed, source, findings, round),
-      role: fixRoleFor(source, findings), kind: 'implement', dependsOn: failed.dependsOn, orderIndex: failed.orderIndex, maxAttempts: settings.defaultMaxAttempts,
+      runId: failed.runId, nodeId: null, key, title: `Fix round ${round}: ${failed.title}`,
+      description: fixTaskDescription(failed, source, findings, round), role, kind: 'implement', dependsOn: failed.dependsOn,
+      orderIndex: failed.orderIndex, maxAttempts: settings.defaultMaxAttempts,
     });
     const requeued = ctx.repos.tasks.update(failed.id, {
       status: 'pending', dependsOn: [fix.key], orderIndex: failed.orderIndex + 1,

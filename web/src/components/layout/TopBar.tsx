@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Bell, Download, Pause, Play, Sparkles, Square } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bell, Download, Layers, Pause, Play, Search, Sparkles, Square } from 'lucide-react';
 import { getToken } from '@/lib/api';
 import { cn, statusMeta, timeAgo } from '@/lib/utils';
 import { useStudio } from '@/store/studio';
-import { Button, Progress, StatusBadge } from '@/components/ui/primitives';
+import { Button, Kbd, Progress, StatusBadge } from '@/components/ui/primitives';
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -12,6 +12,22 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
       <span className={cn('text-[15px] font-semibold tabular-nums', tone)}>{value}</span>
     </div>
   );
+}
+
+const SEEN_KEY = 'asf.notifications.seen';
+
+/** Highest event id the person has already looked at (survives reloads; 0 when storage is unavailable). */
+function readSeen(): number {
+  try {
+    const value = Number(localStorage.getItem(SEEN_KEY));
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeen(id: number): void {
+  try { localStorage.setItem(SEEN_KEY, String(id)); } catch { /* storage unavailable — the badge resets on reload */ }
 }
 
 async function downloadReport(projectId: string, slug: string): Promise<void> {
@@ -24,9 +40,10 @@ async function downloadReport(projectId: string, slug: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export function TopBar() {
+export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { live: liveState, projects, currentProjectId, selectProject, snapshot, events, startPlanning, pause, resume, cancelProject, setView, setError } = useStudio();
   const [bellOpen, setBellOpen] = useState(false);
+  const [seen, setSeen] = useState(readSeen);
   const project = snapshot?.project;
   const tasks = snapshot?.tasks ?? [];
   const done = tasks.filter((t) => t.status === 'completed').length;
@@ -39,11 +56,26 @@ export function TopBar() {
     return alerts.slice(-12).reverse();
   }, [events, currentProjectId]);
 
+  const unseen = notifications.filter((e) => e.id > seen).length;
+  // While the dropdown is open everything that arrives is on screen, so it counts as seen.
+  useEffect(() => {
+    if (!bellOpen) return;
+    const latest = events.at(-1)?.id ?? 0;
+    if (latest > seen) { setSeen(latest); writeSeen(latest); }
+  }, [bellOpen, events, seen]);
+
   const status = project?.status;
   const live = status === 'planning' || status === 'running' || status === 'awaiting_approval';
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-5 border-b border-line-soft bg-ink-900/50 px-4">
+    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line-soft bg-sidebar px-4 2xl:h-16">
+      <div className="flex shrink-0 items-center gap-2.5">
+        <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-accent-from to-accent-to text-white shadow-glow"><Layers size={18} /></div>
+        <div className="hidden leading-tight md:block">
+          <div className="text-[14.5px] font-semibold">Software Factory Agent Studio <span className="text-brand-violet">V2</span></div>
+          <div className="hidden text-[11.5px] text-muted xl:block">AI agents · Code · Test · Secure · Ship</div>
+        </div>
+      </div>
       <div className="flex min-w-0 items-center gap-3">
         <select value={currentProjectId ?? ''} onChange={(e) => void selectProject(e.target.value || null)} aria-label="Current project"
           className="h-8 max-w-[240px] truncate rounded-md border border-line bg-ink-850 px-2 text-[13px] font-medium focus:border-brand focus:outline-none">
@@ -59,21 +91,25 @@ export function TopBar() {
           <Progress value={tasks.length ? done / tasks.length : 0} color={statusMeta(project.status).color} />
         </div>
       )}
+      <button type="button" onClick={onOpenPalette} aria-label="Search and commands (Ctrl+K)"
+        className="hidden h-8 min-w-[220px] flex-1 items-center gap-2 rounded-md border border-line bg-ink-950/60 px-2.5 text-left text-[12.5px] text-faint hover:border-brand/50 hover:text-muted lg:flex lg:max-w-[420px]">
+        <Search size={14} /><span className="flex-1 truncate">Search pages, projects, actions…</span><Kbd>Ctrl</Kbd><Kbd>K</Kbd>
+      </button>
       <Metric label="Active agents" value={String(activeAgents)} tone={activeAgents ? 'text-st-running' : undefined} />
       <Metric label="Running tasks" value={String(running)} />
 
       <div className="ml-auto flex items-center gap-2">
-        <button onClick={() => setView('monitor')} title="Open the live monitor"
+        <button onClick={() => setView('monitor')} title="Open Runs (live monitor)"
           className={cn('hidden items-center gap-2 rounded-full border px-3 py-1 text-[12px] sm:inline-flex',
             liveState?.running.length ? 'border-st-running/40 bg-st-running/10 text-st-running' : 'border-line text-muted hover:text-text')}>
           <span className={cn('h-2 w-2 rounded-full', liveState?.running.length ? 'bg-st-running animate-rail' : 'bg-st-idle')} />
           {liveState?.running.length ? `${liveState.running.length} agent${liveState.running.length > 1 ? 's' : ''} working` : 'No agent working'}
         </button>
         <div className="relative">
-          <Button variant="ghost" size="icon" onClick={() => setBellOpen((v) => !v)} aria-label="Notifications">
+          <Button variant="ghost" size="icon" onClick={() => setBellOpen((open) => !open)} aria-label="Notifications">
             <Bell size={17} />
-            {(pending.length > 0 || notifications.length > 0) && (
-              <span className={cn('absolute right-1.5 top-1.5 h-2 w-2 rounded-full', pending.length ? 'bg-st-waiting' : 'bg-st-failed')} />
+            {(pending.length > 0 || unseen > 0) && (
+              <span data-testid="notification-dot" className={cn('absolute right-1.5 top-1.5 h-2 w-2 rounded-full', pending.length ? 'bg-st-waiting' : 'bg-st-failed')} />
             )}
           </Button>
           {bellOpen && (

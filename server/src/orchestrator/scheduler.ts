@@ -1,19 +1,54 @@
 import fs from 'node:fs';
-import type { Project, ProjectStatus, Task, TaskStatus, TestResult } from '@asf/shared';
+import type { Project, ProjectStatus, Run, RunStatus, Task, TaskStatus, TestResult } from '@asf/shared';
 import type { Db } from '../db/database.ts';
-import { dependenciesMet, dependencyFailed, dependantsOf } from '../domain/taskGraph.ts';
+import { dependantsOf } from '../domain/taskGraph.ts';
 import { assertTransition } from '../domain/taskStateMachine.ts';
 import { NoProviderError } from '../providers/registry.ts';
 import { ProviderError } from '../providers/types.ts';
 import { redact } from '../security/redact.ts';
 import { emitProject, emitTask, getSettings, type StudioContext } from './context.ts';
-import { insertFixTask } from './fixLoop.ts';
+import { insertFixTask, maxFixRoundsFor } from './fixLoop.ts';
+import type { ProcessSlotRelease } from './processBudget.ts';
 import { partialBranchOf, PermanentTaskError, savePartialWork, TASK_RUNNERS, VerificationFailedError } from './taskRunners.ts';
 
 type StopReason = 'cancel' | 'shutdown' | null;
 
 const ACTIVE_PROJECT_STATUSES: ReadonlySet<ProjectStatus> = new Set(['planning', 'running', 'awaiting_approval']);
+const FINISHED_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['completed', 'completed_with_failures', 'failed', 'cancelled']);
+const ERROR_SUMMARY_MAX = 300;
 const now = (): string => new Date().toISOString();
+
+// Dependency rules with the workflow failure strategy (WORKFLOW_ENGINE_SPEC.md §8): a failed task whose node says
+// onFailure 'continue' counts as done for its dependants; with the default 'stop' its dependants are blocked (V1).
+
+/** A failed task that lets its dependants run anyway. */
+function continuedFailure(task: Task | undefined): boolean {
+  return task?.status === 'failed' && task.options.onFailure === 'continue';
+}
+
+/** Every dependency is completed (or failed with onFailure 'continue'). */
+function dependenciesMet(task: Task, byKey: Map<string, Task>): boolean {
+  return task.dependsOn.every((key) => {
+    const dependency = byKey.get(key);
+    return dependency?.status === 'completed' || continuedFailure(dependency);
+  });
+}
+
+/** A dependency failed, was blocked or cancelled (failures with onFailure 'continue' do not count). */
+function dependencyFailed(task: Task, byKey: Map<string, Task>): boolean {
+  return task.dependsOn.some((key) => {
+    const dependency = byKey.get(key);
+    if (continuedFailure(dependency)) return false;
+    return dependency?.status === 'failed' || dependency?.status === 'blocked' || dependency?.status === 'cancelled';
+  });
+}
+
+/** First failed task's error of a run, for the run list (≤ 300 chars). */
+function errorSummaryOf(tasks: Task[]): string | null {
+  const failed = tasks.find((t) => t.status === 'failed');
+  if (!failed) return null;
+  return `${failed.key}: ${failed.error ?? 'failed'}`.slice(0, ERROR_SUMMARY_MAX);
+}
 
 /** Dependency-aware scheduler: promotes, dispatches, retries and recovers tasks. All state lives in SQLite. */
 export class TaskScheduler {
@@ -42,11 +77,36 @@ export class TaskScheduler {
     return updated;
   }
 
-  setProjectStatus(project: Project, status: ProjectStatus, message?: string): Project {
-    if (project.status === status) return project;
-    const updated = this.ctx.repos.projects.update(project.id, { status });
-    emitProject(this.ctx, updated, message ?? `Project ${status.replace('_', ' ')}`);
+  /** The run the project's graph is evaluated on: its active run, else its latest run. */
+  currentRun(projectId: string): Run | null {
+    return this.ctx.repos.runs.activeForProject(projectId) ?? this.ctx.repos.runs.latestForProject(projectId);
+  }
+
+  /** Sets the project status; the current run mirrors it (P4-4), or takes `runStatus` when that differs (completed_with_failures). */
+  setProjectStatus(project: Project, status: ProjectStatus, message?: string, runStatus?: RunStatus): Project {
+    let updated = project;
+    if (project.status !== status) {
+      updated = this.ctx.repos.projects.update(project.id, { status });
+      emitProject(this.ctx, updated, message ?? `Project ${status.replace('_', ' ')}`);
+    }
+    if (status !== 'draft') this.syncRun(this.currentRun(project.id), runStatus ?? status);
     return updated;
+  }
+
+  /** Writes the run status; a finished run records finishedAt and its first task error. Emits 'run.updated' on a change. */
+  private syncRun(run: Run | null, status: RunStatus): void {
+    if (!run || run.status === status) return;
+    // A completed run stays completed when the project is cancelled or fails later; only a retry (running) reopens it.
+    if ((run.status === 'completed' || run.status === 'completed_with_failures') && FINISHED_RUN_STATUSES.has(status)) return;
+    const finished = FINISHED_RUN_STATUSES.has(status);
+    const updated = this.ctx.repos.runs.update(run.id, {
+      status,
+      finishedAt: finished ? now() : null,
+      errorSummary: finished ? errorSummaryOf(this.ctx.repos.tasks.listByRun(run.id)) : null,
+    });
+    const level = status === 'failed' ? 'error' : status === 'cancelled' || status === 'completed_with_failures' ? 'warn' : 'info';
+    this.ctx.events.emit({ projectId: run.projectId, type: 'run.updated', level,
+      message: `Run #${updated.number}: ${status.replaceAll('_', ' ')}`, data: { run: updated } });
   }
 
   /** Re-queues work interrupted by a crash or restart, then resumes active projects. */
@@ -81,9 +141,11 @@ export class TaskScheduler {
     if (this.stopped) return;
     let project = this.ctx.repos.projects.get(projectId);
     if (!project || !ACTIVE_PROJECT_STATUSES.has(project.status)) return;
-    let tasks = this.demoteUnmet(this.promote(this.ctx.repos.tasks.listByProject(projectId)));
+    const run = this.currentRun(projectId);
+    if (!run) return;
+    let tasks = this.demoteUnmet(this.promote(this.ctx.repos.tasks.listByRun(run.id)));
     for (const gate of tasks.filter((t) => t.kind === 'gate' && t.status === 'ready')) this.openGate(project, gate);
-    tasks = this.ctx.repos.tasks.listByProject(projectId);
+    tasks = this.ctx.repos.tasks.listByRun(run.id);
 
     const limit = getSettings(this.ctx).maxParallelTasks;
     for (const task of tasks.filter((t) => t.status === 'ready' && t.kind !== 'gate')) {
@@ -91,8 +153,11 @@ export class TaskScheduler {
       this.start(project, task);
     }
     project = this.ctx.repos.projects.get(projectId)!;
-    const next = this.deriveStatus(project, this.ctx.repos.tasks.listByProject(projectId));
-    if (next) this.setProjectStatus(project, next);
+    tasks = this.ctx.repos.tasks.listByRun(run.id);
+    const next = this.deriveStatus(project, tasks);
+    if (next && next !== 'draft') {
+      this.setProjectStatus(project, next, undefined, next === 'completed' && tasks.some(continuedFailure) ? 'completed_with_failures' : next);
+    }
   }
 
   private promote(initial: Task[]): Task[] {
@@ -110,7 +175,7 @@ export class TaskScheduler {
           changed = true;
         }
       }
-      if (changed) tasks = this.ctx.repos.tasks.listByProject(initial[0]?.projectId ?? '');
+      if (changed) tasks = this.ctx.repos.tasks.listByRun(initial[0]?.runId ?? '');
     }
     return tasks;
   }
@@ -121,13 +186,13 @@ export class TaskScheduler {
     const unmet = tasks.filter((t) => t.status === 'ready' && !dependenciesMet(t, byKey));
     if (!unmet.length) return tasks;
     for (const task of unmet) this.transition(task, 'pending', {}, `${task.title}: waiting for its dependencies`, 'warn');
-    return this.promote(this.ctx.repos.tasks.listByProject(tasks[0].projectId));
+    return this.promote(this.ctx.repos.tasks.listByRun(tasks[0].runId));
   }
 
   private openGate(project: Project, gate: Task): void {
     this.transition(gate, 'waiting_approval', { startedAt: now() }, 'Plan is ready for your approval');
     if (this.ctx.repos.approvals.pendingForTask(gate.id)) return;
-    const planned = this.ctx.repos.tasks.listByProject(project.id).filter((t) => !['plan', 'architecture', 'gate'].includes(t.kind));
+    const planned = this.ctx.repos.tasks.listByRun(gate.runId).filter((t) => !['plan', 'architecture', 'gate'].includes(t.kind));
     const approval = this.ctx.repos.approvals.create({
       projectId: project.id, taskId: gate.id, kind: 'plan', title: `Approve the implementation plan for "${project.name}"`,
       details: { tasks: planned.map((t) => ({ key: t.key, title: t.title, role: t.role, dependsOn: t.dependsOn })) },
@@ -140,7 +205,7 @@ export class TaskScheduler {
     if (!tasks.length) return null;
     const has = (status: TaskStatus): boolean => tasks.some((t) => t.status === status);
     const planningDone = tasks.filter((t) => t.kind === 'plan' || t.kind === 'architecture').every((t) => t.status === 'completed');
-    if (tasks.every((t) => t.status === 'completed')) return 'completed';
+    if (tasks.every((t) => t.status === 'completed' || continuedFailure(t))) return 'completed';
     if (has('running') || has('ready')) return planningDone ? 'running' : 'planning';
     if (has('waiting_approval')) return 'awaiting_approval';
     if (has('pending')) return project.status;
@@ -157,22 +222,44 @@ export class TaskScheduler {
     void this.execute(project.id, running, controller.signal);
   }
 
+  /** Waits for a ProcessBudget slot; an abort while queued rejects like any other abort, so fail() applies cancel/shutdown. */
+  private acquireSlot(project: Project, task: Task, signal: AbortSignal): Promise<ProcessSlotRelease> {
+    const owner = { kind: 'task' as const, id: task.id, projectId: project.id, label: task.title };
+    const pending = this.ctx.budget.acquire(owner, signal);
+    const position = this.ctx.budget.queuePosition(owner);
+    if (position !== null) {
+      this.ctx.events.emit({ projectId: project.id, taskId: task.id, role: task.role, type: 'task.waiting_slot', level: 'info',
+        message: `${task.title}: waiting for a free agent process slot (position ${position})`,
+        data: { position, limit: this.ctx.budget.limit } });
+    }
+    return pending;
+  }
+
   private async execute(projectId: string, task: Task, signal: AbortSignal): Promise<void> {
+    let release: ProcessSlotRelease | null = null;
     try {
       const project = this.ctx.repos.projects.get(projectId)!;
       if (task.kind === 'gate') throw new PermanentTaskError('Gate tasks are completed by approvals');
-      if (task.kind === 'plan' && this.ctx.repos.tasks.listByProject(projectId).some((t) => t.kind === 'implement' || t.kind === 'test')) {
+      if (task.kind === 'plan' && this.planExpanded(task)) {
         this.complete(task, { summary: 'Plan was already expanded before an interruption.' });
         return;
       }
+      // A notification starts no process, so it does not wait for an agent process slot.
+      if (task.kind !== 'notify') release = await this.acquireSlot(project, task, signal);
       const outcome = await TASK_RUNNERS[task.kind]({ ctx: this.ctx, project, task, signal, db: this.db });
       this.complete(task, outcome);
     } catch (error) {
       this.fail(task, error as Error);
     } finally {
+      release?.();
       this.active.delete(task.id);
       if (!this.stopped) setImmediate(() => this.tickAll());
     }
+  }
+
+  /** True when the PM's tasks of this plan task's run already exist (the run was interrupted after the expansion). */
+  private planExpanded(plan: Task): boolean {
+    return dependantsOf(plan.key, this.ctx.repos.tasks.listByRun(plan.runId)).some((t) => t.kind === 'implement' || t.kind === 'test');
   }
 
   private complete(task: Task, outcome: { summary: string; filesChanged?: string[]; testResult?: TestResult | null }): void {
@@ -219,7 +306,7 @@ export class TaskScheduler {
   private startFixRound(failed: Task, failure: VerificationFailedError): boolean {
     const round = insertFixTask(this.ctx, this.db, failed, failure.source, redact(failure.findings));
     if (!round) {
-      const { maxFixRounds } = getSettings(this.ctx);
+      const maxFixRounds = maxFixRoundsFor(this.ctx, failed);
       if (maxFixRounds > 0) {
         this.ctx.events.emit({ projectId: failed.projectId, taskId: failed.id, role: failed.role, type: 'task.fix_exhausted', level: 'warn',
           message: `${failed.title}: all ${maxFixRounds} fix round(s) used — no automatic fix`, data: null });
@@ -255,7 +342,9 @@ export class TaskScheduler {
     const task = this.ctx.repos.tasks.get(taskId);
     if (!task) throw new Error('Task not found');
     if (task.status !== 'failed' && task.status !== 'cancelled') throw new Error(`Only failed or cancelled tasks can be retried (status: ${task.status})`);
-    const all = this.ctx.repos.tasks.listByProject(task.projectId);
+    const run = this.currentRun(task.projectId);
+    if (run && run.id !== task.runId) throw new Error('Only tasks of the project\'s current run can be retried');
+    const all = this.ctx.repos.tasks.listByRun(task.runId);
     // A retried task whose dependencies are not completed waits in "pending" (promotion decides), never jumps the queue.
     const target: TaskStatus = dependenciesMet(task, new Map(all.map((t) => [t.key, t]))) ? 'ready' : 'pending';
     const retried = this.transition(task, target, { maxAttempts: Math.max(task.maxAttempts, task.attempt + 1), error: null, checkpoint: 'none' },
@@ -264,7 +353,9 @@ export class TaskScheduler {
       this.transition(dependant, 'pending', {}, `${dependant.title}: unblocked`);
     }
     const project = this.ctx.repos.projects.get(task.projectId)!;
-    if (project.status === 'failed' || project.status === 'cancelled') this.setProjectStatus(project, 'running', 'Project resumed after retry');
+    // A run that ended with tolerated failures (project "completed") reopens too, so the retried task can run.
+    const reopen = project.status === 'failed' || project.status === 'cancelled' || run?.status === 'completed_with_failures';
+    if (reopen) this.setProjectStatus(project, 'running', 'Project resumed after retry');
     this.tick(task.projectId);
     return retried;
   }
@@ -288,7 +379,8 @@ export class TaskScheduler {
     for (const entry of this.active.values()) {
       if (entry.projectId === projectId) { entry.reason = 'cancel'; entry.controller.abort(); }
     }
-    for (const task of this.ctx.repos.tasks.listByProject(projectId)) {
+    const run = this.currentRun(projectId);
+    for (const task of run ? this.ctx.repos.tasks.listByRun(run.id) : []) {
       if (['pending', 'ready', 'waiting_approval', 'blocked'].includes(task.status)) {
         this.transition(task, 'cancelled', { finishedAt: now(), error: 'Project cancelled' }, `${task.title}: cancelled`, 'warn');
       }

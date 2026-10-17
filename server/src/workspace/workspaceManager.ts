@@ -54,6 +54,18 @@ function isInside(child: string, parent: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+/** The first `limit` bytes of a file without reading the rest into memory (P7-S7). */
+export function readHead(file: string, limit: number): { bytes: Buffer; truncated: boolean } {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(limit + 1);
+    const read = fs.readSync(fd, buffer, 0, limit + 1, 0);
+    return { bytes: buffer.subarray(0, Math.min(read, limit)), truncated: read > limit };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function realpathOrSelf(p: string): string {
   try {
     return fs.realpathSync.native(p);
@@ -284,10 +296,13 @@ export class WorkspaceManager {
     return { integrationPath, integrationBranch, baseCommit: base };
   }
 
-  /** New worktree for one attempt; `continueFrom` (a branch with an interrupted attempt's work) is used as its base. */
-  async createTaskWorktree(project: Project, task: Task, continueFrom?: string): Promise<{ worktreePath: string; branch: string }> {
+  /**
+   * New worktree for one attempt; `continueFrom` (a branch with an interrupted attempt's work) is used as its base.
+   * Runs after the first prefix the name with `r<N>-`, because task keys repeat across runs and branches are never deleted.
+   */
+  async createTaskWorktree(project: Project, task: Task, continueFrom?: string, runNumber = 1): Promise<{ worktreePath: string; branch: string }> {
     if (!project.integrationPath) throw new WorkspaceError('Project has no integration worktree');
-    const name = `${task.key}-a${task.attempt}`;
+    const name = `${runNumber > 1 ? `r${runNumber}-` : ''}${task.key}-a${task.attempt}`;
     const branch = `asf/${project.slug}/${name}`;
     const worktreePath = path.join(this.config.worktreesDir, project.id, name);
     if (fs.existsSync(worktreePath)) await this.removeWorktree(project, worktreePath);
@@ -295,6 +310,23 @@ export class WorkspaceManager {
     const from = partialHead || await headCommit(project.integrationPath);
     await this.repoLock.run(project.workspacePath, () => git(project.workspacePath, ['worktree', 'add', '-b', branch, worktreePath, from]));
     return { worktreePath, branch };
+  }
+
+  /**
+   * Own worktree of an edit-mode workspace session: branch asf/<slug>/session-<n> from the integration HEAD. A branch
+   * of that name that already exists (the studio never deletes branches) is checked out again instead of recreated.
+   */
+  async createSessionWorktree(project: Project, sessionNumber: number): Promise<{ worktreePath: string; branch: string; baseCommit: string }> {
+    if (!project.integrationPath) throw new WorkspaceError('Project has no integration worktree');
+    const name = `session-${sessionNumber}`;
+    const branch = `asf/${project.slug}/${name}`;
+    const worktreePath = path.join(this.config.worktreesDir, project.id, name);
+    if (fs.existsSync(worktreePath)) await this.removeWorktree(project, worktreePath);
+    const existing = await git(project.workspacePath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], true);
+    const baseCommit = existing || await headCommit(project.integrationPath);
+    await this.repoLock.run(project.workspacePath, () => git(project.workspacePath,
+      existing ? ['worktree', 'add', worktreePath, branch] : ['worktree', 'add', '-b', branch, worktreePath, baseCommit]));
+    return { worktreePath, branch, baseCommit };
   }
 
   async removeWorktree(project: Project, worktreePath: string): Promise<void> {
@@ -399,12 +431,20 @@ export class WorkspaceManager {
 
   readFile(root: string, relativePath: string): { content: string; truncated: boolean; binary: boolean } {
     const full = this.resolveInside(root, relativePath);
-    if (isSensitivePath(relativePath)) throw new SensitiveFileError(`${relativePath} may contain secrets, so the studio does not show it`);
+    if (this.isSensitiveTarget(root, relativePath, full)) {
+      throw new SensitiveFileError(`${relativePath} may contain secrets, so the studio does not show it`);
+    }
     if (!fs.existsSync(full) || !fs.statSync(full).isFile()) throw new WorkspaceError(`File not found: ${relativePath}`);
-    const buffer = fs.readFileSync(full);
-    const slice = buffer.subarray(0, MAX_READ_BYTES);
-    if (slice.includes(0)) return { content: '', truncated: false, binary: true };
-    return { content: slice.toString('utf8'), truncated: buffer.length > MAX_READ_BYTES, binary: false };
+    const { bytes, truncated } = readHead(full, MAX_READ_BYTES);
+    if (bytes.includes(0)) return { content: '', truncated: false, binary: true };
+    return { content: bytes.toString('utf8'), truncated, binary: false };
+  }
+
+  /** True when the path or, through an in-root symlink, the file it points to is a sensitive file (P7-S3). */
+  isSensitiveTarget(root: string, relativePath: string, full: string): boolean {
+    if (isSensitivePath(relativePath)) return true;
+    const target = realpathOrSelf(full);
+    return target !== path.resolve(full) && isSensitivePath(path.relative(realpathOrSelf(root), target));
   }
 
   private async initRepo(dir: string): Promise<void> {

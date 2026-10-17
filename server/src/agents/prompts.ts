@@ -115,9 +115,18 @@ ${testSummary}
 ${diff}
 \`\`\`
 
+${FINDINGS_PROTOCOL}
+
 Reply in Markdown: findings with file references, then a final line exactly "VERDICT: PASS" or "VERDICT: FAIL".
 Use FAIL only for CRITICAL/HIGH problems that must be fixed before delivery.`;
 }
+
+/** Structured copy of the review findings the studio stores (PHASE_6 P6-1); parsed by quality/findings.ts. */
+const FINDINGS_PROTOCOL = `After the findings and before the VERDICT line, add one fenced block that lists every finding as JSON for the studio:
+\`\`\`asf-findings
+[{"severity":"critical|high|medium|low|info","title":"short title","file":"relative/path.ext or null","line":12,"description":"what is wrong and why it matters","recommendation":"how to fix it"}]
+\`\`\`
+Use an empty array [] in that block when there are no findings.`;
 
 export function chatPrompt(project: Project, role: AgentRole, history: { direction: string; content: string }[], message: string, context: string): string {
   const transcript = history.slice(-10).map((m) => `${m.direction === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n');

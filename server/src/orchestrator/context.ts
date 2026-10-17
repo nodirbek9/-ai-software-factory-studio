@@ -5,6 +5,8 @@ import type { Repositories } from '../db/repositories.ts';
 import type { EventStream } from '../events/eventStream.ts';
 import { DEFAULT_FALLBACK_ORDER, type ProviderRegistry } from '../providers/registry.ts';
 import type { WorkspaceManager } from '../workspace/workspaceManager.ts';
+import type { SessionManager } from '../sessions/sessionManager.ts';
+import type { ProcessBudget } from './processBudget.ts';
 
 export const DEFAULT_SETTINGS: StudioSettings = {
   maxParallelTasks: 2,
@@ -13,6 +15,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   idleTimeoutMinutes: 15,
   fallbackOrder: DEFAULT_FALLBACK_ORDER,
   maxFixRounds: 2,
+  maxAgentProcesses: 3,
 };
 
 /** Serialises async work per key (used to guard each project's integration worktree). */
@@ -39,6 +42,10 @@ export interface StudioContext {
   workspace: WorkspaceManager;
   executor: AgentExecutor;
   integrationLock: KeyedMutex;
+  /** Shared cap on running CLI agent processes (tasks, workspace sessions, V1 chat); see processBudget.ts. */
+  budget: ProcessBudget;
+  /** Workspace agent sessions (V2, sessions/sessionManager.ts). */
+  sessions: SessionManager;
 }
 
 export function getSettings(ctx: StudioContext): StudioSettings {
