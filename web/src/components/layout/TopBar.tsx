@@ -7,7 +7,7 @@ import { Button, Kbd, Progress, StatusBadge } from '@/components/ui/primitives';
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="hidden min-w-[78px] flex-col leading-tight lg:flex">
+    <div className="hidden min-w-[78px] flex-col leading-tight 2xl:flex">
       <span className="text-[11px] text-muted">{label}</span>
       <span className={cn('text-[15px] font-semibold tabular-nums', tone)}>{value}</span>
     </div>
@@ -71,16 +71,16 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line-soft bg-sidebar px-4 2xl:h-16">
       <div className="flex shrink-0 items-center gap-2.5">
         <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-accent-from to-accent-to text-white shadow-glow"><Layers size={18} /></div>
-        <div className="hidden leading-tight md:block">
+        <div className="hidden leading-tight xl:block">
           <div className="text-[14.5px] font-semibold">Software Factory Agent Studio <span className="text-brand-violet">V2</span></div>
           <div className="hidden text-[11.5px] text-muted xl:block">AI agents · Code · Test · Secure · Ship</div>
         </div>
       </div>
       {/* The picker shrinks (and truncates) instead of spilling its text over the search box on narrow windows. */}
-      <div className="flex min-w-[9rem] shrink items-center gap-3 overflow-hidden">
+      <div className="flex min-w-[13rem] shrink items-center gap-3 overflow-hidden">
         <select value={currentProjectId ?? ''} onChange={(e) => void selectProject(e.target.value || null)} aria-label="Current project"
           title={project?.name}
-          className="h-8 w-full min-w-0 max-w-[240px] truncate rounded-md border border-line bg-ink-850 px-2 text-[13px] font-medium focus:border-brand focus:outline-none">
+          className="h-8 w-full min-w-[7.5rem] max-w-[240px] truncate rounded-md border border-line bg-ink-850 px-2 text-[13px] font-medium focus:border-brand focus:outline-none">
           {!currentProjectId && <option value="">{projects.length ? 'Select a project' : 'No projects yet'}</option>}
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
@@ -88,7 +88,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       </div>
 
       {project && (
-        <div className="hidden w-52 shrink-0 flex-col gap-1 xl:flex">
+        <div className="hidden w-52 shrink-0 flex-col gap-1 2xl:flex">
           <div className="flex justify-between text-[11px] text-muted"><span>Verified progress</span><span className="tabular-nums">{done}/{tasks.length} tasks</span></div>
           <Progress value={tasks.length ? done / tasks.length : 0} color={statusMeta(project.status).color} />
         </div>
