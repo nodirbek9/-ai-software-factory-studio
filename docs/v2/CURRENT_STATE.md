@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-17 (Opus 5.5, account 1): **V2.2 is live** — `v2.0.0` (cut-over), V2.1 (terminals, install-
 script policy, lighter snapshot, security fixes; `docs/v2/phases/V2_1.md`) and V2.2 (every-button audit, Runs page,
-project Files tab, lifecycle log, v6 indexes; `docs/v2/phases/V2_2.md`, tag `v2.2.0`), running on port 4317 with the
+project Files tab, lifecycle log, v6 indexes, responsive header, stale-tab reload; `docs/v2/phases/V2_2.md`, tag `v2.2.2`), running on port 4317 with the
 real data (schema 6). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`. `main` lives in
 `D:\jarvis 2\ai-software-factory-studio`; new work goes on a feature branch in the dev worktree `D:\jarvis 2\asf-v2`
 (ports 4327/5327, own data).
