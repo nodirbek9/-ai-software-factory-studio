@@ -1,8 +1,16 @@
 # V2 — Current state
 
-Last updated: 2026-10-17 (Opus 5.5, account 1, owner session "davom et"): Phase 7 done.
+Last updated: 2026-10-17 (Opus 5.5, account 1): **V2 is live** — merged into `main` (`b2691fc`, tag `v2.0.0`) and
+running on port 4317 with the real data (schema 5). Cut-over record and rollback: `docs/v2/WINDOWS_LAUNCH.md`.
+This folder (`ai-software-factory-studio`) is now where V2 work happens; `D:\jarvis 2\asf-v2` is the old, merged worktree.
 
 ## Owner report (Uzbek)
+
+**Cut-over (2026-10-17) — V2 ishga tushdi.** Sizning "ha" ingiz bilan: V1 bo'shligi tekshirildi (0 ta ish), V1
+to'xtatildi, yakuniy zaxira olindi (`D:\jarvis 2\backups\asf-v1-final-2026-10-17\`), `feature/v2-studio` `main` ga
+merge qilindi (`b2691fc`), `v2.0.0` tag qo'yildi. Main da barcha testlar o'tdi (server 235, web 487, E2E 11). Studiya
+4317 da ishga tushdi: baza v2 → v5 ga o'tdi, 8 loyiha va 88 vazifa joyida, avtomatik zaxira `studio-before-v5.db`
+yozildi. 11 sahifa haqiqiy ma'lumot bilan xatosiz ochildi.
 
 **Phase 7 (2026-10-17, kunduzgi ish) — barqarorlashtirish tugadi.** Batafsil: `docs/v2/phases/PHASE_7.md`.
 - Brauzerda tekshiruv qilindi: barcha sahifalar ochiladi, eski konsol xatolari takrorlanmadi.
