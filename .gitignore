@@ -5,3 +5,11 @@ web/dist/
 *.log
 coverage/
 .ai-jobs/
+
+# Personal resume notes (owner only)
+DAVOM_ETTIRISH.md
+
+# AI agent workspaces
+.claude/
+.codex/
+.gemini/
